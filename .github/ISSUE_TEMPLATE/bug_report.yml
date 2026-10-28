@@ -1,0 +1,63 @@
+name: Bug 反馈
+description: 录制失败、画面/声音异常、权限问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先看看 [权限说明](https://github.com/fuxm0818/FreeRecord/blob/main/docs/PERMISSIONS.md) 和 README 的常见问题——「录制黑屏」「已授权却仍提示」这两类绝大多数是签名身份变化导致的，重新构建后需要重新授权。
+  - type: input
+    id: macos
+    attributes:
+      label: macOS 版本
+      description: 苹果菜单 → 关于本机
+      placeholder: "15.1 / 12.7.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: 机器架构
+      options: [Apple 芯片, Intel]
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: 你用的是哪份产物
+      options: [GitHub Release 下载, 自己 scripts/build.sh 构建, swift build 裸跑]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 选了哪种画面来源、哪种声音、帧率分辨率、录了多久
+      placeholder: |
+        1. 菜单栏图标 → 区域录制
+        2. 框选 1280x720，30fps，麦克风+系统声音
+        3. 录 20 秒后点停止
+        4. 弹出「保存失败：…」
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志与报错原文
+      description: 弹窗的完整文案（含括号里的 domain/code）；或 `log stream --predicate 'process == "FreeRecord"' --level info` 的输出
+      render: text
+  - type: checkboxes
+    id: prior
+    attributes:
+      label: 确认
+      options:
+        - label: 已完全退出 App 后重试过（关窗口不算退出，它常驻菜单栏）
+          required: true
+        - label: 已读过 README 常见问题 / docs/PERMISSIONS.md
+          required: false

@@ -1,0 +1,43 @@
+name: 功能请求
+description: 想要的新能力或体验改进
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提之前先看 [README 的功能清单](https://github.com/fuxm0818/FreeRecord#功能)，可能已经有了或只是没被注意到。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题
+      description: 不是"我想要某按钮"，而是"我现在录 XX 时会卡在哪一步"
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的做法
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 涉及范围
+      options:
+        - 画面采集（窗口/区域/多屏）
+        - 声音（麦克风/系统声音/BlackHole）
+        - 交互与界面
+        - 输出格式与编码
+        - 打包与分发
+        - 其他
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: 约束确认
+      options:
+        - label: 该功能可以保持"零第三方依赖"（只用系统框架）
+          required: false
+        - label: 该功能在 macOS 12.3 上可用，或可为不同系统版本分支
+          required: false

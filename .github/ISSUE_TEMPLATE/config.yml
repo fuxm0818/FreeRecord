@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 权限与授权问题先看这里
+    url: https://github.com/fuxm0818/FreeRecord/blob/main/docs/PERMISSIONS.md
+    about: 录屏授权、重新构建后失效、Gatekeeper 拦截的处理办法
+  - name: 架构与实现说明
+    url: https://github.com/fuxm0818/FreeRecord/blob/main/docs/ARCHITECTURE.md
+    about: 想改内核或新增悬浮窗前必读的模块边界与已知坑

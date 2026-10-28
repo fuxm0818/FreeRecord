@@ -1,0 +1,17 @@
+# 构建产物
+.build/
+.build-x86/
+dist/
+*.dmg
+*.zip
+
+# 本地私有资料（内部工作档案，不随仓库公开）
+docs/研究档案/
+录屏软件需求_*.md
+了解项目概况_*.md
+会话导出-*.html
+.workbuddy/
+
+# macOS
+.DS_Store
+*.ips

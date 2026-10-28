@@ -1,0 +1,132 @@
+name: build
+
+# 推送到 main/develop、打 tag（v*）或手动触发时，自动编译出「Apple 芯片 + Intel」
+# 通用二进制，并产出 .dmg / .zip + SHA256 校验和；打 tag 时创建 GitHub Release。
+#
+# 默认（不配置任何 secrets）用 ad-hoc 签名：产物在别人机器上首次打开需要
+# 右键 →「打开」一次。配置 Developer ID / 公证 secrets 后会自动升级为
+# 免拦截的正式签名包，见下面两个标记为「可选」的步骤。
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Swift 6 工具链：macos-13/14 runner 自带的 Xcode 解析不了 swift-tools-version: 6.0
+    runs-on: macos-15
+    env:
+      # 只把「是否配置过」暴露成普通变量，密钥本身仍留在各自步骤的 env 里
+      HAS_DEV_ID: ${{ secrets.DEVELOPER_ID_P12 != '' }}
+      HAS_NOTARY: ${{ secrets.NOTARY_API_KEY != '' && secrets.DEVELOPER_ID_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 显示构建环境
+        run: |
+          sw_vers
+          swift --version
+          xcodebuild -version
+
+      - name: 可选：导入 Developer ID 签名证书
+        if: env.HAS_DEV_ID == 'true'
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASS: ${{ secrets.DEVELOPER_ID_P12_PASS }}
+          DEVELOPER_ID_NAME: ${{ secrets.DEVELOPER_ID_NAME }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p ci "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          security set-keychain-settings -t 3600 "$KEYCHAIN"
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/devID.p12"
+          security import "$RUNNER_TEMP/devID.p12" -k "$KEYCHAIN" -P "$DEVELOPER_ID_P12_PASS" -T /usr/bin/codesign -A
+          rm -f "$RUNNER_TEMP/devID.p12"
+          echo "CODESIGN_IDENTITY=$DEVELOPER_ID_NAME" >> "$GITHUB_ENV"
+
+      - name: 构建通用二进制
+        run: bash scripts/build.sh
+
+      - name: 读取版本号
+        id: ver
+        run: |
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/FreeRecord.app/Contents/Info.plist)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 可选：公证 App（.app 本体）
+        # App Store Connect API 密钥三件套：NOTARY_API_KEY_ID / NOTARY_API_ISSUER_ID / NOTARY_API_KEY(.p8 内容)
+        # 公证只对 Developer ID 签名有意义，所以同时要求 HAS_DEV_ID。
+        if: env.HAS_NOTARY == 'true' && env.HAS_DEV_ID == 'true'
+        env:
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
+          NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+        run: |
+          set -euo pipefail
+          P8="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$NOTARY_API_KEY" > "$P8"
+          xcrun notarytool submit dist/FreeRecord.app \
+            --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER_ID" --key "$P8" --wait
+          xcrun stapler staple dist/FreeRecord.app
+
+      - name: 打包 dmg / zip 与校验和
+        run: |
+          set -euo pipefail
+          bash scripts/make-dmg.sh
+          VERSION="${{ steps.ver.outputs.version }}"
+          ditto -c -k --sequesterRsrc --keepParent dist/FreeRecord.app "dist/FreeRecord-$VERSION.zip"
+          (cd dist && shasum -a 256 "FreeRecord-$VERSION.dmg" "FreeRecord-$VERSION.zip" > SHA256SUMS.txt)
+          codesign -dvv dist/FreeRecord.app 2>&1 | sed -n '1,12p' || true
+
+      - name: 可选：公证并装订 dmg
+        if: env.HAS_NOTARY == 'true' && env.HAS_DEV_ID == 'true'
+        env:
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
+          NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          P8="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$NOTARY_API_KEY" > "$P8"
+          xcrun notarytool submit "dist/FreeRecord-$VERSION.dmg" \
+            --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER_ID" --key "$P8" --wait
+          xcrun stapler staple "dist/FreeRecord-$VERSION.dmg"
+          xcrun stapler validate "dist/FreeRecord-$VERSION.dmg"
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeRecord-${{ steps.ver.outputs.version }}
+          path: |
+            dist/FreeRecord-*.dmg
+            dist/FreeRecord-*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 打 tag 时发布 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/FreeRecord-$VERSION.dmg" \
+            "dist/FreeRecord-$VERSION.zip" \
+            "dist/SHA256SUMS.txt" \
+            --title "FreeRecord $VERSION" \
+            --generate-notes

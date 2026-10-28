@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 仅 Developer ID 签名路径使用（scripts/build.sh 里带 hardened runtime 时传入）。
+	     非沙盒 App，只声明实际用到的硬件权限：
+	     hardened runtime 下缺这两项会导致麦克风/摄像头采集静默失败。 -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<!-- 公证要求 get-task-allow 为 false，否则 notarytool 会拒收 -->
+	<key>com.apple.security.get-task-allow</key>
+	<false/>
+</dict>
+</plist>
