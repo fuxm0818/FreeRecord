@@ -46,14 +46,60 @@ public final class RecordingWriter {
     // 一旦开始收尾就丢弃迟到的样本：SCStream stopCapture 返回后仍可能补发
     // 队列里的帧，此时 append 到已 markAsFinished 的 input 会让整个 writer 变 failed
     private var finishing = false
+    private let width: Int
+    private let height: Int
+    private let fps: Int
+    private let bitrate: Int
     private var videoShift: CMTime = .zero
     private var audioShift: [CMTime] = [.zero, .zero]
     private var videoShiftDirty = false
     private var audioShiftDirty = [false, false]
+    private let frameDuration: CMTime
 
     public var isPaused: Bool {
         lock.lock(); defer { lock.unlock() }
         return paused
+    }
+
+    /// -16341 这类错误没有明文原因，没有现场就永远只能猜。出问题时把关键状态一次倒出来
+    public func diagnostics() -> String {
+        lock.lock(); defer { lock.unlock() }
+        var lines: [String] = []
+        lines.append("时间：\(ISO8601DateFormatter().string(from: Date()))")
+        lines.append("文件：\(url.path)")
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? NSNumber {
+            lines.append("已写字节：\(size.intValue)")
+        }
+        lines.append("写入器状态：\(Self.statusName(writer.status))")
+        if let failure = Self.describe(writer.error) { lines.append("错误：\(failure)") }
+        lines.append("视频尺寸：\(width)x\(height) fps=\(fps) 码率=\(bitrate)")
+        lines.append("分片间隔：\(writer.movieFragmentInterval.seconds) 秒")
+        lines.append("会话已开始：\(sessionStarted) 暂停中：\(paused) 收尾中：\(finishing)")
+        if let videoInput {
+            lines.append("视频输入：ready=\(videoInput.isReadyForMoreMediaData) 最后PTS=\(ptsText(lastVideoPTS))")
+        }
+        for (index, input) in audioInputs.enumerated() {
+            guard let input else { continue }
+            let name = index == AudioTrack.microphone.rawValue ? "麦克风" : "系统声"
+            lines.append("\(name)输入：ready=\(input.isReadyForMoreMediaData) 最后PTS=\(ptsText(lastAudioPTS[index])) 样本数=\(audioSamplesAppended)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func statusName(_ status: AVAssetWriter.Status) -> String {
+        switch status {
+        case .unknown: return "unknown"
+        case .writing: return "writing"
+        case .completed: return "completed"
+        case .failed: return "failed"
+        case .cancelled: return "cancelled"
+        @unknown default: return "other(\(status.rawValue))"
+        }
+    }
+
+    private func ptsText(_ time: CMTime) -> String {
+        time.isValid ? String(format: "%.4f", time.seconds) : "invalid"
     }
 
     public func setPaused(_ newPaused: Bool) {
@@ -99,7 +145,12 @@ public final class RecordingWriter {
     private init(url: URL, fileType: AVFileType, width: Int, height: Int, fps: Int, hasMicTrack: Bool, hasSystemTrack: Bool, bitrate: Int) throws {
         self.url = url
         self.audioTrackCount = (hasMicTrack ? 1 : 0) + (hasSystemTrack ? 1 : 0)
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.bitrate = bitrate
         self.hasVideo = width > 0 && height > 0
+        self.frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, fps)))
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.removeItem(at: url)
 
@@ -117,6 +168,10 @@ public final class RecordingWriter {
                 AVVideoMaxKeyFrameIntervalKey: max(1, fps * 2),
                 AVVideoExpectedSourceFrameRateKey: fps,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                // 实时采集不能让编码器重排帧：开了 B 帧的话，我们重定时后给出的
+                // DTS（等于 PTS）是错的，媒体管线偶尔会因此判样本时间非法并让
+                // 整个 writer 变 failed（-11800/-16341）。禁掉重排就没有 B 帧。
+                AVVideoAllowFrameReorderingKey: false,
             ]
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
                 AVVideoCodecKey: AVVideoCodecType.h264,
@@ -131,7 +186,10 @@ public final class RecordingWriter {
             assetWriter.add(input)
             video = input
 
-            // 分片 MP4：moov 索引在文件头，崩溃/强杀时已录内容仍可播放
+            // 分片 MP4：moov 索引在文件头，崩溃/强杀时已录内容仍可播放。
+            // 实测过 1 秒一片：第一次落片（正好在第 1 秒）就会在部分机型/磁盘忙时
+            // 触发 -11800（底层 OSStatus -16341，Apple 论坛归因于分片太小导致
+            // 写盘 I/O 压力大）。改成 5 秒一片，落片压力降到 1/5，最坏也只丢 5 秒。
             assetWriter.movieFragmentInterval = CMTime(seconds: 5, preferredTimescale: 600)
         }
 
@@ -183,41 +241,89 @@ public final class RecordingWriter {
         return audioSamplesAppended
     }
 
+    /// 写入器自己报错时给出原因，供每帧巡检和看门狗使用
+    public var failureDescription: String? {
+        guard writer.status == .failed else { return nil }
+        return Self.describe(writer.error) ?? "写入器未说明原因"
+    }
+
+    /// 等不到才放弃这一帧。立刻丢帧会让编码器一卡就静默丢光后续所有内容。
+    private func waitUntilReady(_ input: AVAssetWriterInput) -> Bool {
+        guard !input.isReadyForMoreMediaData else { return true }
+        for _ in 0..<10 {
+            lock.lock()
+            let stop = finishing || paused
+            lock.unlock()
+            if stop { return false }
+            Thread.sleep(forTimeInterval: 0.001)
+            if input.isReadyForMoreMediaData { return true }
+        }
+        return input.isReadyForMoreMediaData
+    }
+
     public func appendVideo(_ sampleBuffer: CMSampleBuffer) -> AppendResult {
+        guard let videoInput else { return .invalid }
+        lock.lock()
+        let aborted: AppendResult? = finishing ? .invalid : (paused ? .paused : nil)
+        if paused { videoShiftDirty = true }
+        lock.unlock()
+        if let aborted { return aborted }
+
+        guard waitUntilReady(videoInput) else { return .notReady }
+
         lock.lock(); defer { lock.unlock() }
         if finishing { return .invalid }
         if paused {
             videoShiftDirty = true
             return .paused
         }
-        guard let videoInput else { return .invalid }
         guard videoInput.isReadyForMoreMediaData else { return .notReady }
-        guard let retimed = makeRetimed(sampleBuffer, shift: &videoShift, shiftDirty: &videoShiftDirty, referencePTS: lastVideoPTS) else { return .invalid }
-        let pts = CMSampleBufferGetPresentationTimeStamp(retimed)
-        if lastVideoPTS.isValid, CMTimeCompare(pts, lastVideoPTS) <= 0 { return .invalid }
+        guard let (retimed, pts) = prepare(sampleBuffer, shift: &videoShift, shiftDirty: &videoShiftDirty, previousPTS: lastVideoPTS) else { return .invalid }
         guard videoInput.append(retimed) else { return .invalid }
         lastVideoPTS = pts
         return .written
     }
 
     public func appendAudio(_ sampleBuffer: CMSampleBuffer, track: AudioTrack = .microphone) -> AppendResult {
-        lock.lock(); defer { lock.unlock() }
         let index = track.rawValue
+        guard let audioInput = audioInputs[index] else { return .invalid }
+        lock.lock()
+        let aborted: AppendResult? = finishing ? .invalid : (paused ? .paused : nil)
+        if paused { audioShiftDirty[index] = true }
+        lock.unlock()
+        if let aborted { return aborted }
+
+        guard waitUntilReady(audioInput) else { return .notReady }
+
+        lock.lock(); defer { lock.unlock() }
         if finishing { return .invalid }
         if paused {
             audioShiftDirty[index] = true
             return .paused
         }
-        guard let audioInput = audioInputs[index] else { return .invalid }
         guard audioInput.isReadyForMoreMediaData else { return .notReady }
-        guard let retimed = makeRetimed(sampleBuffer, shift: &audioShift[index], shiftDirty: &audioShiftDirty[index], referencePTS: lastAudioPTS[index]) else { return .invalid }
-        let pts = CMSampleBufferGetPresentationTimeStamp(retimed)
-        let previous = lastAudioPTS[index]
-        if previous.isValid, CMTimeCompare(pts, previous) <= 0 { return .invalid }
+        guard let (retimed, pts) = prepare(sampleBuffer, shift: &audioShift[index], shiftDirty: &audioShiftDirty[index], previousPTS: lastAudioPTS[index]) else { return .invalid }
         guard audioInput.append(retimed) else { return .invalid }
         lastAudioPTS[index] = pts
         audioSamplesAppended += 1
         return .written
+    }
+
+    /// 时间戳回退（切显示器、系统时钟跳变、恢复边界）时把整条轨往后推一帧，
+    /// 而不是像以前那样永久拒收后续所有样本。
+    private func prepare(_ sampleBuffer: CMSampleBuffer, shift: inout CMTime, shiftDirty: inout Bool, previousPTS: CMTime) -> (CMSampleBuffer, CMTime)? {
+        guard let retimed = makeRetimed(sampleBuffer, shift: &shift, shiftDirty: &shiftDirty, referencePTS: previousPTS) else { return nil }
+        var pts = CMSampleBufferGetPresentationTimeStamp(retimed)
+        guard previousPTS.isValid, CMTimeCompare(pts, previousPTS) <= 0 else { return (retimed, pts) }
+
+        let duration = CMSampleBufferGetDuration(sampleBuffer)
+        let step = duration.isValid && duration.seconds > 0 ? duration : frameDuration
+        let delta = CMTimeSubtract(CMTimeAdd(previousPTS, step), pts)
+        guard delta.isValid, CMTimeCompare(delta, .zero) > 0,
+              let fixed = makeRetimed(sampleBuffer, shift: &shift, shiftDirty: &shiftDirty, referencePTS: previousPTS, extraShift: delta) else { return nil }
+        pts = CMSampleBufferGetPresentationTimeStamp(fixed)
+        guard CMTimeCompare(pts, previousPTS) > 0 else { return nil }
+        return (fixed, pts)
     }
 
     public func finish() async throws -> URL {
@@ -241,9 +347,21 @@ public final class RecordingWriter {
         return url
     }
 
+    /// -11800 这类笼统错误真正的线索在底层错误里，逐层展开给用户看
     static func describe(_ error: Error?) -> String? {
         guard let nsError = error as NSError? else { return nil }
-        return "\(nsError.localizedDescription)（\(nsError.domain) \(nsError.code)）"
+        var parts = ["\(nsError.localizedDescription)（\(nsError.domain) \(nsError.code)）"]
+        if let reason = nsError.localizedFailureReason, !reason.isEmpty {
+            parts.append(reason)
+        }
+        var underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+        var depth = 0
+        while let current = underlying, depth < 3 {
+            parts.append("底层：\(current.localizedDescription)（\(current.domain) \(current.code)）")
+            underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
+        }
+        return parts.joined(separator: "；")
     }
 
     private func beginFinishing() {
@@ -268,7 +386,7 @@ public final class RecordingWriter {
         try? FileManager.default.removeItem(at: url)
     }
 
-    private func makeRetimed(_ sampleBuffer: CMSampleBuffer, shift: inout CMTime, shiftDirty: inout Bool, referencePTS: CMTime) -> CMSampleBuffer? {
+    private func makeRetimed(_ sampleBuffer: CMSampleBuffer, shift: inout CMTime, shiftDirty: inout Bool, referencePTS: CMTime, extraShift: CMTime = .zero) -> CMSampleBuffer? {
         let count = CMSampleBufferGetNumSamples(sampleBuffer)
         guard count > 0 else { return nil }
 
@@ -282,7 +400,10 @@ public final class RecordingWriter {
         }
         guard let origin = originPTS else { return nil }
 
-        let firstRelative = CMTimeSubtract(pts, origin)
+        let originForFirst = pts.timescale == origin.timescale
+            ? origin
+            : CMTimeConvertScale(origin, timescale: pts.timescale, method: .roundHalfAwayFromZero)
+        let firstRelative = CMTimeSubtract(pts, originForFirst)
         if shiftDirty {
             shiftDirty = false
             if referencePTS.isValid {
@@ -296,13 +417,40 @@ public final class RecordingWriter {
             }
         }
 
+        let totalShift = CMTimeAdd(shift, extraShift)
         var timings = [CMSampleTimingInfo](repeating: CMSampleTimingInfo(), count: count)
+        var cachedScale: CMTimeScale = -1
+        var localOrigin = CMTime.zero
+        var localShift = CMTime.zero
         for index in 0..<count {
             var timing = CMSampleTimingInfo()
             CMSampleBufferGetSampleTimingInfo(sampleBuffer, at: index, timingInfoOut: &timing)
+
+            // 偏移只在样本自己的 timescale 上做。跨 timescale 直接相减会被折算进两者中较大的那个
+            // （PCM 的 1/48000 会被拉到 1e9），均匀网格变成 20833/20834 纳秒的抖动间隔，
+            // 媒体管线在随机时刻判定样本时间非法，整个写入器以 -11800（底层 -16341）失败。
+            let scale = timing.presentationTimeStamp.isValid
+                ? timing.presentationTimeStamp.timescale
+                : timing.decodeTimeStamp.timescale
+            guard scale > 0 else {
+                timings[index] = timing
+                continue
+            }
+            if scale != cachedScale {
+                cachedScale = scale
+                localOrigin = CMTimeConvertScale(origin, timescale: scale, method: .roundHalfAwayFromZero)
+                localShift = totalShift.timescale == scale
+                    ? totalShift
+                    : CMTimeConvertScale(totalShift, timescale: scale, method: .roundHalfAwayFromZero)
+            }
             if timing.presentationTimeStamp.isValid {
-                let relative = CMTimeAdd(CMTimeSubtract(timing.presentationTimeStamp, origin), shift)
+                let relative = CMTimeAdd(CMTimeSubtract(timing.presentationTimeStamp, localOrigin), localShift)
                 timing.presentationTimeStamp = CMTimeMaximum(relative, .zero)
+            }
+            if timing.decodeTimeStamp.isValid {
+                // 解码时间戳也得跟着搬到相对轴上，否则留下 31269s 这种绝对值，比 PTS 大得多
+                let relative = CMTimeAdd(CMTimeSubtract(timing.decodeTimeStamp, localOrigin), localShift)
+                timing.decodeTimeStamp = CMTimeMaximum(relative, .zero)
             }
             timings[index] = timing
         }

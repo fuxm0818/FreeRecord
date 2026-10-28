@@ -56,6 +56,8 @@ final class RecordingCoordinator {
     }
 
     private var writer: RecordingWriter?
+    private var counters: CaptureCounters?
+    private var stallWatchdog: Task<Void, Never>?
     private var screen: ScreenCapture?
     private var systemAudioStream: SystemAudioStreamCapture?
     private var mic: AudioDeviceCapture?
@@ -154,6 +156,7 @@ final class RecordingCoordinator {
             createdWriter = writer
 
             let counters = CaptureCounters()
+            self.counters = counters
             var screen: ScreenCapture?
             if let source {
                 let capture = ScreenCapture(writer: writer, counters: counters, systemAudio: hasSystem)
@@ -245,6 +248,7 @@ final class RecordingCoordinator {
             pausedSince = nil
             state = .recording
             createSleepAssertion()
+            startStallWatchdog()
             delegate?.recordingStateChanged()
         } catch {
             createdWriter?.cancel()
@@ -305,6 +309,47 @@ final class RecordingCoordinator {
         return fileURL
     }
 
+    /// 录制中每秒巡检：采集还在进帧、写入却 3 秒没动静，就当成编码器停摆主动收尾，
+    /// 明确告诉用户停在第几秒，而不是悄悄给一个只有前半段的文件。
+    private func startStallWatchdog() {
+        stallWatchdog?.cancel()
+        stallWatchdog = Task { [weak self] in
+            var last = self?.counters?.snapshot()
+            var stalledTicks = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self else { return }
+                guard self.state == .recording, let counters = self.counters else {
+                    last = self.counters?.snapshot()
+                    stalledTicks = 0
+                    if self.state == .idle { return }
+                    continue
+                }
+                if let failure = self.writer?.failureDescription {
+                    self.captureInterrupted(message: "编码器报错：\(failure)")
+                    return
+                }
+                let now = counters.snapshot()
+                if let previous = last, now.captured > previous.captured, now.written == previous.written {
+                    stalledTicks += 1
+                } else {
+                    stalledTicks = 0
+                }
+                last = now
+                if stalledTicks >= 3 {
+                    let seconds = Int(self.elapsed.rounded())
+                    self.captureInterrupted(message: "第 \(seconds) 秒起编码器没有响应，已保存前 \(seconds) 秒。\n建议重启 App 后再录。")
+                    return
+                }
+            }
+        }
+    }
+
+    private func stopStallWatchdog() {
+        stallWatchdog?.cancel()
+        stallWatchdog = nil
+    }
+
     private func createSleepAssertion() {
         guard sleepAssertionID == 0 else { return }
         IOPMAssertionCreateWithName(
@@ -333,6 +378,7 @@ final class RecordingCoordinator {
     }
 
     private func complete(save: Bool, askToSave: Bool = true) async {
+        stopStallWatchdog()
         let duration = elapsed
         let screen = self.screen
         self.screen = nil
@@ -361,13 +407,16 @@ final class RecordingCoordinator {
             return
         }
 
+        // 上报文件真实时长：墙钟 elapsed 只说明录了多久，说明不了文件里有多少
         do {
             let url = try await writer.finish()
-            reportSaved(url: url, writer: writer, size: size, duration: duration, askToSave: askToSave)
+            let real = await Self.movieDuration(url)
+            reportSaved(url: url, writer: writer, size: size, duration: real ?? duration, askToSave: askToSave)
         } catch {
             // 分片 MP4 的 moov 在文件头，收尾失败时已录内容大概率仍可播放，别让用户白录
             if Self.isPlayableMovie(writer.url) {
-                reportSaved(url: writer.url, writer: writer, size: size, duration: duration, askToSave: askToSave)
+                let real = await Self.movieDuration(writer.url)
+                reportSaved(url: writer.url, writer: writer, size: size, duration: real ?? duration, askToSave: askToSave)
             } else {
                 state = .idle
                 delegate?.recordingStateChanged()
@@ -388,7 +437,15 @@ final class RecordingCoordinator {
             height: size.height,
             fileSizeMB: fileSizeMB,
             audioTrackCount: writer.audioTrackCount
-        ), askToSave: true)
+        ), askToSave: askToSave)
+    }
+
+    private static func movieDuration(_ url: URL) async -> TimeInterval? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let duration = try? await AVURLAsset(url: url).load(.duration),
+              duration.isNumeric else { return nil }
+        let seconds = duration.seconds
+        return seconds.isFinite && seconds > 0 ? seconds : nil
     }
 
     private static func isPlayableMovie(_ url: URL) -> Bool {
@@ -404,12 +461,36 @@ final class RecordingCoordinator {
             accumulatedPaused += Date().timeIntervalSince(pausedSince ?? Date())
             pausedSince = nil
         }
+        // -16341 这类错误没有明文原因，先把现场落到文件里，下次就能看着现场修而不是猜
+        let logPath = Self.appendDiagnostics(writer: writer, message: message, directory: saveDirectory)
+        let elapsedSeconds = Int(elapsed.rounded())
+        var shown = message
+        if let logPath { shown += "\n诊断已写入：\(logPath)" }
+        if elapsedSeconds <= 3 {
+            shown += "\n\n开录几秒就失败通常是编码器扛不住当前分辨率/帧率，建议降到 1080p 或 30fps 再试。"
+        }
         state = .finishing
         delegate?.recordingStateChanged()
         Task { [weak self] in
             await self?.complete(save: true, askToSave: false)
-            self?.delegate?.recordingFailed(message: "采集中断，已保存已录部分。\n\(message)")
+            self?.delegate?.recordingFailed(message: "采集中断，已保存已录部分。\n\(shown)")
         }
+    }
+
+    /// 把写入器现场追加到输出目录的 编码器诊断.log，返回路径供弹窗提示
+    private static func appendDiagnostics(writer: RecordingWriter?, message: String, directory: URL) -> String? {
+        guard let writer else { return nil }
+        let text = "触发：\(message)\n" + writer.diagnostics() + "\n\n"
+        let logURL = directory.appendingPathComponent("编码器诊断.log")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            handle.seekToEndOfFile()
+            handle.write(Data(text.utf8))
+            try? handle.close()
+        } else {
+            try? text.write(to: logURL, atomically: true, encoding: .utf8)
+        }
+        return logURL.path
     }
 
     private static func displayUnderMouse(in content: SCShareableContent) -> SCDisplay? {
