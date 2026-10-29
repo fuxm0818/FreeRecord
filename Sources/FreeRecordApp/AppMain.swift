@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private let savePanel = SavePanelController()
     private let audioWindow = AudioRecordWindowController()
     private let cameraWindow = CameraRecordWindowController()
+    private let cameraPip = CameraPiPController()
 
     /// 已选好、等待在预录制工具栏里确认的目标
     private enum PendingTarget {
@@ -38,6 +39,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private var pendingTarget: PendingTarget?
     /// 本次录制范围的屏幕坐标（NS 系），用于把录制条摆到右下角
     private var recordingAnchor: NSRect?
+    /// 录制中的范围指示框钉在哪块屏、要不要跟随某个窗口
+    private var rangeScreen: NSScreen?
+    private var rangeWindowID: CGWindowID?
+    private var rangeFollowTimer: Timer?
     private lazy var settingsPanel = SettingsPanelController(settings: settings)
     private lazy var previewPanel = PreviewPanelController()
     private lazy var home = HomeWindowController(settings: settings)
@@ -66,6 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             let muted = !self.coordinator.isMicrophoneMuted
             self.coordinator.setMicrophoneMuted(muted)
             self.controlBar.setMicMuted(muted)
+        }
+        controlBar.onToggleCamera = { [weak self] in
+            guard let self else { return }
+            // 统一走 settings.cameraEnabled，预录条开关与录制中开关共用一套副作用
+            settings.cameraEnabled.toggle()
         }
         controlBar.elapsedProvider = { [weak self] in self?.coordinator.elapsed ?? 0 }
 
@@ -106,10 +116,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             self.preRecordBar.hide()
             self.regionFrame.hide()
             self.pendingTarget = nil
+            self.hideCameraPreview()
             self.rebuildMenu()
         }
         preRecordBar.onSizeEdited = { [weak self] newSize in
             self?.resizePendingRegion(to: newSize)
+        }
+        preRecordBar.onCameraToggled = { [weak self] isOn in
+            self?.cameraToggled(isOn)
+        }
+        cameraPip.onPlacementChanged = { [weak self] placement in
+            guard let self else { return }
+            self.settings.cameraCenterX = Double(placement.centerX)
+            self.settings.cameraCenterY = Double(placement.centerY)
+        }
+        cameraPip.onSizeChanged = { [weak self] fraction in
+            self?.settings.cameraSize = Double(fraction)
         }
         regionFrame.onChange = { [weak self] rect in
             self?.pendingRegionChanged(to: rect)
@@ -171,6 +193,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             self.coordinator.saveDirectory = url
             self.home.viewModel.history.updateDirectory(url)
             self.home.viewModel.history.reload()
+        }.store(in: &cancellables)
+        settings.$cameraEnabled.dropFirst().sink { [weak self] enabled in
+            guard let self else { return }
+            self.preRecordBar.setCameraToggle(on: enabled)
+            if self.isRecordingScreen {
+                self.controlBar.setCameraOn(enabled)
+                self.setCameraDuringRecording(enabled)
+            } else if enabled {
+                self.prepareCameraIfNeeded(enabled: true)
+            } else {
+                self.hideCameraPreview()
+            }
+        }.store(in: &cancellables)
+        settings.$cameraMirrored.dropFirst().sink { [weak self] mirrored in
+            self?.cameraPip.setMirrored(mirrored)
+        }.store(in: &cancellables)
+        settings.$cameraSize.dropFirst().sink { [weak self] size in
+            self?.cameraPip.setSizeFraction(CGFloat(size))
+        }.store(in: &cancellables)
+        settings.$cameraDeviceID.dropFirst().sink { [weak self] _ in
+            guard let self, self.settings.cameraEnabled,
+                  self.coordinator.state == .idle else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.cameraPip.stop()
+                self.prepareCameraIfNeeded()
+            }
         }.store(in: &cancellables)
 
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -337,6 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         // 上一段成片/设置内容拍进新录制
         previewPanel.hide()
         settingsPanel.hide()
+        hideCameraPreview()
         regionSelector.show()
     }
 
@@ -353,6 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             pixelSize: NSSize(width: window.frame.width * scale, height: window.frame.height * scale),
             pixelScale: scale
         )
+        prepareCameraIfNeeded()
     }
 
     private func showAudioRecorder() {
@@ -413,13 +464,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
     // MARK: - 启动录制（先选范围 → 弹预录制工具栏 → 确认开始）
 
-    private func startWithCountdown(source: CaptureSource, settings captureSettings: CaptureSettings) {
+    private func startWithCountdown(source: CaptureSource, settings captureSettings: CaptureSettings, camera: CameraOverlaySource?) {
         if settings.countdownEnabled {
             countdown.start(seconds: 3) { [weak self] in
-                Task { await self?.coordinator.start(source: source, settings: captureSettings) }
+                Task { await self?.coordinator.start(source: source, settings: captureSettings, cameraOverlay: camera) }
             }
         } else {
-            Task { await coordinator.start(source: source, settings: captureSettings) }
+            Task { await coordinator.start(source: source, settings: captureSettings, cameraOverlay: camera) }
         }
     }
 
@@ -431,6 +482,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             audio: settings.effectiveAudio,
             pixelScale: scale
         )
+    }
+
+    // MARK: - 摄像头画中画
+
+    private var currentCameraPlacement: CameraOverlayPlacement {
+        CameraOverlayPlacement(
+            centerX: CGFloat(settings.cameraCenterX),
+            centerY: CGFloat(settings.cameraCenterY),
+            widthFraction: CGFloat(settings.cameraSize),
+            mirrored: settings.cameraMirrored
+        )
+    }
+
+    /// 本次录制范围（屏幕坐标，NS 系），画中画位置按它归一化
+    private func captureRect(for target: PendingTarget) -> NSRect {
+        switch target {
+        case .screen(_, let screen):
+            return screen.frame
+        case .window(let window):
+            return Self.nsRect(fromCG: window.frame)
+        case .region(_, _, let rect):
+            return rect
+        }
+    }
+
+    /// 目标选定后按需开启摄像头并显示预览；已开启则只更新位置与大小。
+    /// `enabled` 由订阅方把刚发出的值传进来：@Published 在 willSet 就发值，
+    /// 这里同步读 settings.cameraEnabled 会拿到旧值，导致关掉再打开时不生效。
+    private func prepareCameraIfNeeded(enabled: Bool? = nil) {
+        guard enabled ?? settings.cameraEnabled, pendingTarget != nil else { return }
+        let placement = currentCameraPlacement
+        Task { [weak self] in
+            guard let self else { return }
+            let ok = await self.cameraPip.prepare(
+                deviceID: self.settings.cameraDeviceID,
+                mirrored: self.settings.cameraMirrored
+            )
+            guard ok else {
+                self.settings.cameraEnabled = false
+                self.preRecordBar.setCameraToggle(on: false)
+                self.hideCameraPreview()
+                self.alert("摄像头没能开启。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
+                return
+            }
+            guard self.preRecordBar.isShowing, let target = self.pendingTarget else {
+                // 等待授权期间目标已被取消，别把摄像头晾着
+                await self.cameraPip.stop()
+                return
+            }
+            self.cameraPip.showPreview(
+                captureRect: self.captureRect(for: target),
+                placement: placement,
+                sizeFraction: CGFloat(self.settings.cameraSize),
+                mirrored: self.settings.cameraMirrored
+            )
+        }
+    }
+
+    private func cameraToggled(_ isOn: Bool) {
+        // 统一由 settings.$cameraEnabled 的订阅处理开关副作用
+        settings.cameraEnabled = isOn
+    }
+
+    /// 录制中开关画中画。采集流不重建：合成器每帧读一次 source，
+    /// 关掉时先把 widthFraction 置 0（下一帧起整帧透传），再收预览窗与采集会话。
+    private func setCameraDuringRecording(_ on: Bool) {
+        guard on else {
+            cameraPip.suppressOverlay()
+            hideCameraPreview()
+            return
+        }
+        guard let rect = recordingAnchor, rect.width > 1, rect.height > 1 else { return }
+        let placement = currentCameraPlacement
+        Task { [weak self] in
+            guard let self else { return }
+            let ok = await self.cameraPip.prepare(
+                deviceID: self.settings.cameraDeviceID,
+                mirrored: self.settings.cameraMirrored
+            )
+            guard ok else {
+                self.settings.cameraEnabled = false
+                self.alert("摄像头没能开启。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
+                return
+            }
+            // 等授权/起会话这期间用户又关掉了，或录制已停止：别把小窗晾在画面上
+            guard self.settings.cameraEnabled, self.isRecordingScreen else {
+                await self.cameraPip.stop()
+                return
+            }
+            self.cameraPip.showPreview(
+                captureRect: rect,
+                placement: placement,
+                sizeFraction: CGFloat(self.settings.cameraSize),
+                mirrored: self.settings.cameraMirrored
+            )
+            self.cameraPip.bringPreviewToFront()
+        }
+    }
+
+    private func hideCameraPreview() {
+        cameraPip.hidePreview()
+        Task { [weak self] in
+            await self?.cameraPip.stop()
+        }
     }
 
     private func prepareScreenTarget(screen: NSScreen) {
@@ -446,6 +601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                 let scale = screen.backingScaleFactor
                 let size = NSSize(width: Double(display.width) * scale, height: Double(display.height) * scale)
                 preRecordBar.show(target: .screen(screen), settings: settings, pixelSize: size, pixelScale: scale)
+                prepareCameraIfNeeded()
             } catch {
                 alert("获取屏幕信息失败：\(error.localizedDescription)")
             }
@@ -470,6 +626,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                     pixelSize: NSSize(width: globalRect.width * scale, height: globalRect.height * scale),
                     pixelScale: scale
                 )
+                prepareCameraIfNeeded()
             } catch {
                 alert("获取屏幕信息失败：\(error.localizedDescription)")
             }
@@ -485,6 +642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             rect: rect,
             pixelSize: NSSize(width: rect.width * scale, height: rect.height * scale)
         )
+        cameraPip.updateCaptureRect(rect)
     }
 
     private func resizePendingRegion(to newSize: NSSize) {
@@ -505,6 +663,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             pixelSize: NSSize(width: rect.width * scale, height: rect.height * scale)
         )
         preRecordBar.reposition()
+        cameraPip.updateCaptureRect(rect)
     }
 
     private func beginConfirmedRecording() {
@@ -515,7 +674,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         }
         preRecordBar.hide()
         pendingTarget = nil
+        Task { [weak self] in
+            guard let self else { return }
+            // 开关是在选区阶段打开的，摄像头通常已在跑；这里兜住「刚打开就点开始」
+            if self.settings.cameraEnabled {
+                let placement = self.currentCameraPlacement
+                let ok = await self.cameraPip.prepare(
+                    deviceID: self.settings.cameraDeviceID,
+                    mirrored: self.settings.cameraMirrored
+                )
+                if ok {
+                    self.cameraPip.setPlacement(placement)
+                    self.cameraPip.showPreview(
+                        captureRect: self.captureRect(for: pending),
+                        placement: placement,
+                        sizeFraction: CGFloat(self.settings.cameraSize),
+                        mirrored: self.settings.cameraMirrored
+                    )
+                } else {
+                    self.settings.cameraEnabled = false
+                    self.preRecordBar.setCameraToggle(on: false)
+                    self.alert("摄像头没能开启，本次将只录制屏幕。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
+                }
+            }
+            self.beginRecording(pending: pending)
+        }
+    }
 
+    private func beginRecording(pending: PendingTarget) {
+        // 屏幕类录制一律带上 source：录制中途才打开画中画时也有合成器可用，
+        // 没帧时合成器整帧透传，不开摄像头等于零开销
+        let camera = cameraPip.source
         switch pending {
         case .region(let display, let screen, let rect):
             regionFrame.setEditable(false)
@@ -524,23 +713,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             let y = screen.frame.maxY - rect.maxY
             let cgRect = CGRect(x: x, y: y, width: rect.width, height: rect.height).integral
             recordingAnchor = rect
+            rangeScreen = screen
+            rangeWindowID = nil
             // 区域模式：宽高就是选区本身（按像素录制），不再缩放
             var capture = currentCaptureSettings(scale: screen.backingScaleFactor)
             capture.targetHeight = 0
-            startWithCountdown(source: .region(display: display, rect: cgRect), settings: capture)
+            startWithCountdown(source: .region(display: display, rect: cgRect), settings: capture, camera: camera)
         case .window(let window):
-            recordingAnchor = Self.nsRect(fromCG: window.frame)
+            let rect = Self.nsRect(fromCG: window.frame)
+            recordingAnchor = rect
+            rangeScreen = NSScreen.screens.first { $0.frame.intersects(rect) }
+            rangeWindowID = CGWindowID(window.windowID)
             startWithCountdown(
                 source: .window(window),
-                settings: currentCaptureSettings(scale: Self.screenScale(for: window.frame))
+                settings: currentCaptureSettings(scale: Self.screenScale(for: window.frame)),
+                camera: camera
             )
         case .screen(let display, let screen):
             recordingAnchor = screen.frame
+            rangeScreen = screen
+            rangeWindowID = nil
             startWithCountdown(
                 source: .display(display),
-                settings: currentCaptureSettings(scale: screen.backingScaleFactor)
+                settings: currentCaptureSettings(scale: screen.backingScaleFactor),
+                camera: camera
             )
         }
+    }
+
+    // MARK: - 录制中的范围指示
+
+    private var isRecordingScreen: Bool {
+        guard coordinator.state == .recording || coordinator.state == .paused else { return false }
+        return coordinator.sessionKind != .audio
+    }
+
+    /// 录制一开始就把范围框钉住：区域/整屏/窗口三种目标都有框，
+    /// 否则用户录到一半不知道自己录的是哪一块
+    private func pinRecordingRange() {
+        guard let screen = rangeScreen, let rect = recordingAnchor, rect.width > 1, rect.height > 1 else { return }
+        regionFrame.show(screen: screen, rect: rect, editable: false)
+        // 预览窗固定比范围框高一层，再抬一次只是保险：框是刚 orderFront 上来的
+        cameraPip.bringPreviewToFront()
+        startRangeFollow()
+    }
+
+    /// 窗口会被拖走，框得跟着走；整屏和区域的几何是固定的，不用轮询
+    private func startRangeFollow() {
+        rangeFollowTimer?.invalidate()
+        rangeFollowTimer = nil
+        guard let windowID = rangeWindowID else { return }
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.followRecordingWindow(windowID) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        rangeFollowTimer = timer
+    }
+
+    private func stopRangeFollow() {
+        rangeFollowTimer?.invalidate()
+        rangeFollowTimer = nil
+    }
+
+    private func followRecordingWindow(_ windowID: CGWindowID) {
+        guard isRecordingScreen else { return }
+        guard let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String: Any]])?.first,
+              let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+              let cg = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
+            // 窗口被关掉/最小化：框留着只会指错地方
+            regionFrame.hide()
+            return
+        }
+        let rect = Self.nsRect(fromCG: cg)
+        guard rect.width > 1, rect.height > 1 else { return }
+        recordingAnchor = rect
+        regionFrame.update(rect: rect)
     }
 
     /// CGWindow 坐标（主屏左上原点）→ AppKit 屏幕坐标（左下原点）
@@ -564,9 +811,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                 audioWindow.setRecording(true, paused: false)
             } else {
                 audioWindow.hide()
-                // 真正开录后绿框就是残留：切到别的屏幕还挂着，容易被当成没清干净
-                regionFrame.hide()
-                controlBar.show(anchor: recordingAnchor, microphone: coordinator.hasMicrophoneTrack)
+                // 录制期间绿框保留：只读样式标出正在录的范围，停止或取消后统一收起。
+                pinRecordingRange()
+                controlBar.show(
+                    anchor: recordingAnchor,
+                    microphone: coordinator.hasMicrophoneTrack,
+                    camera: settings.cameraEnabled
+                )
                 controlBar.setPaused(false)
                 if settings.clickHighlightEnabled { clickHighlight.start() }
             }
@@ -575,7 +826,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             if isAudio {
                 audioWindow.setRecording(true, paused: true)
             } else {
-                controlBar.show(anchor: recordingAnchor, microphone: coordinator.hasMicrophoneTrack)
+                regionFrame.bringToFront()
+                cameraPip.bringPreviewToFront()
+                controlBar.show(
+                    anchor: recordingAnchor,
+                    microphone: coordinator.hasMicrophoneTrack,
+                    camera: settings.cameraEnabled
+                )
                 controlBar.setPaused(true)
             }
         case .finishing:
@@ -589,8 +846,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             controlBar.hide()
             clickHighlight.stop()
             stopStatusTimer()
+            stopRangeFollow()
             regionFrame.hide()
+            hideCameraPreview()
             recordingAnchor = nil
+            rangeScreen = nil
+            rangeWindowID = nil
             if isAudio {
                 audioWindow.setRecording(false, paused: false)
             }
@@ -606,6 +867,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
     func recordingFailed(message: String) {
         regionFrame.hide()
+        hideCameraPreview()
         updateStatusButton()
         alert(message)
     }

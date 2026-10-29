@@ -45,6 +45,9 @@ public final class RecordingWriter {
     private var lastAudioEnd: [CMTime]
     /// 各轨首个成功写入样本的原始 PTS：音画对齐诊断用（与 origin 的关系能看出启动错位）
     private var firstRawPTS: [CMTime?] = [nil, nil, nil] // 0=视频 1=麦克风 2=系统声
+    /// 各轨末个成功写入样本的原始 PTS：诊断必须与首帧同用原始时钟，
+    /// 混用重定时后的 lastVideoPTS 会算出跨时钟域的荒诞时长
+    private var lastRawPTS: [CMTime?] = [nil, nil, nil]
     /// 暂停恢复的统一续接点：所有轨从同一输出时刻继续，暂停间隙等长，
     /// 恢复后各轨相对关系与暂停前一致（各轨独立续接会每次暂停累积几十毫秒错位）
     private var pendingResumePTS: CMTime = .invalid
@@ -310,6 +313,7 @@ public final class RecordingWriter {
         if firstRawPTS[0] == nil {
             firstRawPTS[0] = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         }
+        lastRawPTS[0] = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         return .written
     }
 
@@ -339,9 +343,11 @@ public final class RecordingWriter {
             ? CMTimeAdd(pts, duration)
             : CMTimeAdd(pts, CMTime(value: 1024, timescale: 48000))
         let rawSlot = track == .microphone ? 1 : 2
+        let rawPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         if firstRawPTS[rawSlot] == nil {
-            firstRawPTS[rawSlot] = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            firstRawPTS[rawSlot] = rawPTS
         }
+        lastRawPTS[rawSlot] = rawPTS
         audioSamplesAppended += 1
         return .written
     }
@@ -423,8 +429,8 @@ public final class RecordingWriter {
         lock.lock(); defer { lock.unlock() }
         guard sessionStarted, let origin = originPTS else { return nil }
         guard let videoFirst = firstRawPTS[0], videoFirst.isValid else { return nil }
-        let videoLast = lastVideoPTS
-        guard videoLast.isValid else { return nil }
+        let videoLast = lastRawPTS[0]
+        guard let videoLast, videoLast.isValid else { return nil }
 
         var lines: [String] = []
         lines.append("时间：\(ISO8601DateFormatter().string(from: Date()))")
@@ -438,9 +444,8 @@ public final class RecordingWriter {
                             videoLast.seconds - videoFirst.seconds))
         let micNames = [(1, "麦克风轨"), (2, "系统声轨")]
         for (slot, name) in micNames {
-            guard let first = firstRawPTS[slot], first.isValid else { continue }
-            let last = lastAudioPTS[slot == 1 ? 0 : 1]
-            guard last.isValid else { continue }
+            guard let first = firstRawPTS[slot], first.isValid,
+                  let last = lastRawPTS[slot], last.isValid else { continue }
             let firstOffset = first.seconds - reference
             let lastOffset = last.seconds - reference
             // 首偏移 = 启动错位（时钟域固定差 + 启动顺序）；

@@ -19,19 +19,22 @@ enum PreRecordTarget {
     }
 }
 
-/// 预录制工具栏（597×50 单行）：
-/// 宽高 · 分辨率/帧率 · 麦克风/系统声音/点击高亮开关 · 开始录制。
+/// 预录制工具栏（640×50 单行）：
+/// 宽高 · 分辨率/帧率 · 麦克风/系统声音/点击高亮/摄像头画中画开关 · 开始录制。
 @MainActor
 final class PreRecordBarController: NSObject {
     var onStart: (() -> Void)?
     var onCancel: (() -> Void)?
     /// 仅区域模式：用户在工具栏里改宽/高时回调（用于同步移动选区绿框）
     var onSizeEdited: ((NSSize) -> Void)?
+    /// 摄像头画中画开关（需要异步申请权限，交给上层处理）
+    var onCameraToggled: ((Bool) -> Void)?
 
     private var panel: NSPanel?
     private var micButton: NSButton?
     private var systemButton: NSButton?
     private var mouseButton: NSButton?
+    private var cameraButton: NSButton?
     private var widthField: NSTextField?
     private var heightField: NSTextField?
     private var resolutionPopup: NSPopUpButton?
@@ -41,7 +44,7 @@ final class PreRecordBarController: NSObject {
     private var pixelScale: Double = 1
     private weak var settingsRef: AppSettings?
 
-    private static let panelSize = NSSize(width: 600, height: 50)
+    private static let panelSize = NSSize(width: 640, height: 50)
 
     func show(target: PreRecordTarget, settings: AppSettings, pixelSize: NSSize, pixelScale: Double = 1) {
         hide()
@@ -108,9 +111,17 @@ final class PreRecordBarController: NSObject {
             tip: "点击高亮",
             isOn: settings.clickHighlightEnabled
         )
+        let cameraButton = makeToggle(
+            symbol: "person.crop.rectangle",
+            tip: "摄像头画中画",
+            isOn: settings.cameraEnabled
+        )
+        cameraButton.target = self
+        cameraButton.action = #selector(cameraClicked(_:))
         self.micButton = micButton
         self.systemButton = systemButton
         self.mouseButton = mouseButton
+        self.cameraButton = cameraButton
 
         let startButton = NSButton(title: "开始录制", target: self, action: #selector(startClicked))
         startButton.bezelStyle = .rounded
@@ -139,7 +150,7 @@ final class PreRecordBarController: NSObject {
             makeSeparator(),
             resolutionPopup, fpsPopup,
             makeSeparator(),
-            micButton, systemButton, mouseButton,
+            micButton, systemButton, mouseButton, cameraButton,
             spacer,
             startButton, closeButton,
         ])
@@ -169,6 +180,7 @@ final class PreRecordBarController: NSObject {
         micButton = nil
         systemButton = nil
         mouseButton = nil
+        cameraButton = nil
         widthField = nil
         heightField = nil
         resolutionPopup = nil
@@ -176,6 +188,13 @@ final class PreRecordBarController: NSObject {
     }
 
     var isShowing: Bool { panel != nil }
+
+    /// 摄像头权限失败等场景由上层把开关拨回去
+    func setCameraToggle(on: Bool) {
+        guard let cameraButton else { return }
+        cameraButton.state = on ? .on : .off
+        applyToggleStyle(cameraButton)
+    }
 
     /// 选区绿框拖动/缩放或字段联动后同步：更新锚点与像素宽高（拖动过程中不挪工具栏，拖完再挪）
     func updateRegion(rect: NSRect, pixelSize: NSSize) {
@@ -319,6 +338,11 @@ final class PreRecordBarController: NSObject {
         let system = systemButton?.state == .on
         settings.setAudio(mic && system ? .microphoneAndSystem : (mic ? .microphone : (system ? .system : .none)), for: .screen)
         settings.clickHighlightEnabled = mouseButton?.state == .on
+    }
+
+    @objc private func cameraClicked(_ sender: NSButton) {
+        applyToggleStyle(sender)
+        onCameraToggled?(sender.state == .on)
     }
 
     @objc private func startClicked() {

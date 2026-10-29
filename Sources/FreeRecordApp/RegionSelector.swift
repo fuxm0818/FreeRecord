@@ -200,6 +200,10 @@ final class RegionOverlayView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// 从菜单栏/全局热键唤起时 App 往往不是前台，第一次点击会被 AppKit 当成「激活用」吞掉，
+    /// 表现为框选拖不动
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .crosshair)
     }
@@ -341,6 +345,11 @@ final class RegionFrameController {
         }
     }
 
+    /// 只钉层级不改内容：倒计时遮罩、别的 App 切全屏都会盖住范围框，录制状态变化时抬一次
+    func bringToFront() {
+        panel?.orderFrontRegardless()
+    }
+
     func hide() {
         panel?.orderOut(nil)
         panel = nil
@@ -391,11 +400,12 @@ final class RegionFrameView: NSView {
     override func resetCursorRects() {
         guard editable else { return }
         addCursorRect(bounds, cursor: .pointingHand)
+        // 四角用系统八向对角缩放光标，与画中画小窗一致（老系统退回轴向光标）
         let zones: [(NSRect, NSCursor)] = [
-            (cornerRect(.nw), .crosshair), (cornerRect(.ne), .crosshair),
-            (cornerRect(.sw), .crosshair), (cornerRect(.se), .crosshair),
-            (edgeRect(.n), .resizeUpDown), (edgeRect(.s), .resizeUpDown),
-            (edgeRect(.w), .resizeLeftRight), (edgeRect(.e), .resizeLeftRight),
+            (cornerRect(.nw), ResizeZone.topLeft.cursor), (cornerRect(.ne), ResizeZone.topRight.cursor),
+            (cornerRect(.sw), ResizeZone.bottomLeft.cursor), (cornerRect(.se), ResizeZone.bottomRight.cursor),
+            (edgeRect(.n), ResizeZone.top.cursor), (edgeRect(.s), ResizeZone.bottom.cursor),
+            (edgeRect(.w), ResizeZone.left.cursor), (edgeRect(.e), ResizeZone.right.cursor),
         ]
         for (rect, cursor) in zones where rect.width > 0 {
             addCursorRect(rect, cursor: cursor)
@@ -403,31 +413,40 @@ final class RegionFrameView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.systemGreen.withAlphaComponent(0.85).setStroke()
         let border = NSBezierPath(rect: bounds.insetBy(dx: 1.0, dy: 1.0))
-        border.lineWidth = 1.5
-        border.stroke()
-        drawCornerBrackets(in: bounds, length: 20, lineWidth: 4, color: .systemGreen)
-
         if editable {
+            NSColor.systemGreen.withAlphaComponent(0.85).setStroke()
+            border.lineWidth = 1.5
+            border.stroke()
+            drawCornerBrackets(in: bounds, length: 20, lineWidth: 4, color: .systemGreen)
             drawHandles()
+        } else {
+            // 只读框是录制期间「正在录哪一块」的唯一线索，深色打底 + 亮绿实线双层描边，
+            // 压在白色文档或深色终端上都保证看得见
+            NSColor.black.withAlphaComponent(0.6).setStroke()
+            border.lineWidth = 5
+            border.stroke()
+            NSColor.systemGreen.setStroke()
+            border.lineWidth = 2.5
+            border.stroke()
+            drawCornerBrackets(in: bounds, length: 28, lineWidth: 6, color: .systemGreen)
         }
 
         let size = regionSize.width > 0 ? regionSize : bounds.size
-        let label = "\(Int(size.width)) × \(Int(size.height))"
+        let label = editable
+            ? "\(Int(size.width)) × \(Int(size.height))"
+            : "录制中  \(Int(size.width)) × \(Int(size.height))"
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: NSColor.white,
-            .backgroundColor: NSColor.systemGreen.withAlphaComponent(0.9),
+            .backgroundColor: NSColor.systemGreen.withAlphaComponent(0.95),
         ]
         let labelSize = label.size(withAttributes: attributes)
-        label.draw(
-            at: NSPoint(
-                x: bounds.maxX - labelSize.width - 6,
-                y: bounds.minY + 4
-            ),
-            withAttributes: attributes
-        )
+        // 录制中标签放左上角：右下角是控制条的位置，会被压住
+        let origin = editable
+            ? NSPoint(x: bounds.maxX - labelSize.width - 6, y: bounds.minY + 4)
+            : NSPoint(x: bounds.minX + 6, y: bounds.maxY - labelSize.height - 8)
+        label.draw(at: origin, withAttributes: attributes)
     }
 
     private func drawHandles() {

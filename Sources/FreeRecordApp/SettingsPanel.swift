@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import FreeRecordCore
 import SwiftUI
 
@@ -42,6 +43,7 @@ struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     let onSystemAudioHelp: () -> Void
     let onCreateMultiOutput: () -> Void
+    @State private var cameras: [AVCaptureDevice] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -66,6 +68,39 @@ struct SettingsView: View {
             Toggle("停止录制后询问文件名和保存位置", isOn: $settings.askNameOnSave)
             Toggle("开始前 3 秒倒计时", isOn: $settings.countdownEnabled)
             Toggle("鼠标点击高亮（黄色圆圈）", isOn: $settings.clickHighlightEnabled)
+
+            Divider()
+
+            Text("摄像头画中画")
+                .font(.headline)
+            Toggle("录屏时显示摄像头画面", isOn: $settings.cameraEnabled)
+            HStack {
+                Text("摄像头")
+                    .foregroundColor(.secondary)
+                Picker("", selection: $settings.cameraDeviceID) {
+                    Text("系统默认").tag("")
+                    ForEach(cameras, id: \.uniqueID) { camera in
+                        Text(camera.localizedName).tag(camera.uniqueID)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 220)
+                Spacer()
+                Toggle("左右镜像", isOn: $settings.cameraMirrored)
+            }
+            HStack {
+                Text("画中画大小")
+                    .foregroundColor(.secondary)
+                Slider(value: $settings.cameraSize, in: AppSettings.cameraSizeRange)
+                    .frame(width: 180)
+                Text("\(Int((settings.cameraSize * 100).rounded()))%")
+                    .foregroundColor(.secondary)
+                    .frame(width: 42, alignment: .trailing)
+                Spacer()
+            }
+            Text("拖动预览小窗改位置，拖它的四条边、四个角或滚轮改大小；录制过程中也能随时调整，成片与预览一致。")
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             Divider()
 
@@ -95,6 +130,9 @@ struct SettingsView: View {
         }
         .padding(18)
         .frame(width: 500)
+        .onAppear {
+            cameras = CameraPiPCapture.availableDevices()
+        }
     }
 
     private func chooseDirectory() {

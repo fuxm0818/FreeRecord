@@ -8,6 +8,8 @@ final class ControlBarController: NSObject {
     var onScreenshot: (() -> Void)?
     /// 录制中静音/恢复麦克风
     var onToggleMic: (() -> Void)?
+    /// 录制中开/关摄像头画中画
+    var onToggleCamera: (() -> Void)?
     var elapsedProvider: (() -> TimeInterval)?
 
     private var panel: NSPanel?
@@ -15,23 +17,39 @@ final class ControlBarController: NSObject {
     private var pauseButton: NSButton?
     private var screenshotButton: NSButton?
     private var micButton: NSButton?
+    private var cameraButton: NSButton?
     private var timer: Timer?
     private var screenshotFeedbackTask: Task<Void, Never>?
     private(set) var isPaused = false
     private(set) var isMicMuted = false
+    private(set) var isCameraOn = false
 
-    private static let panelSize = NSSize(width: 280, height: 50)
+    private static let panelSize = NSSize(width: 316, height: 50)
 
-    func show(anchor: NSRect? = nil, microphone: Bool = false) {
+    func show(anchor: NSRect? = nil, microphone: Bool = false, camera: Bool = false) {
         if panel == nil {
             buildPanel()
         }
         setPaused(false)
         setMicVisible(microphone)
         setMicMuted(false)
+        setCameraOn(camera)
+        resetScreenshotFeedback()
         reposition(anchor: anchor)
         panel?.orderFrontRegardless()
         startTimer()
+    }
+
+    func setCameraOn(_ on: Bool) {
+        isCameraOn = on
+        let symbol = on ? "video.fill" : "video.slash.fill"
+        cameraButton?.image = NSImage(
+            systemSymbolName: symbol,
+            accessibilityDescription: on ? "关闭摄像头画中画" : "开启摄像头画中画"
+        )
+        cameraButton?.toolTip = on ? "关闭摄像头画中画" : "开启摄像头画中画"
+        // 关着的态压暗一档，扫一眼就知道小窗现在没进画面
+        cameraButton?.contentTintColor = on ? .white : NSColor.white.withAlphaComponent(0.4)
     }
 
     func setMicVisible(_ visible: Bool) {
@@ -53,6 +71,7 @@ final class ControlBarController: NSObject {
     func hide() {
         timer?.invalidate()
         timer = nil
+        resetScreenshotFeedback()
         panel?.orderOut(nil)
     }
 
@@ -65,22 +84,38 @@ final class ControlBarController: NSObject {
         updateLabel()
     }
 
+    /// 截图后的确认态要短：按住不放连点时，旧版会把勾号一直顶在按钮上，看不出还能不能再点
     func showScreenshotResult(success: Bool) {
         screenshotFeedbackTask?.cancel()
         guard let screenshotButton else { return }
+        screenshotButton.isEnabled = false
         screenshotButton.image = NSImage(
             systemSymbolName: success ? "checkmark.circle.fill" : "xmark.circle.fill",
             accessibilityDescription: success ? "截图已保存" : "截图失败"
         )
         screenshotButton.contentTintColor = success ? .systemGreen : .systemRed
         screenshotButton.toolTip = success ? "截图已保存" : "截图失败"
+        let holdNanoseconds: UInt64 = success ? 600_000_000 : 1_200_000_000
         screenshotFeedbackTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.screenshotButton?.image = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "截图")
-            self.screenshotButton?.contentTintColor = .white
-            self.screenshotButton?.toolTip = "截图（保存到录制目录）"
+            try? await Task.sleep(nanoseconds: holdNanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.restoreScreenshotButton()
         }
+    }
+
+    private func resetScreenshotFeedback() {
+        screenshotFeedbackTask?.cancel()
+        screenshotFeedbackTask = nil
+        restoreScreenshotButton()
+    }
+
+    private func restoreScreenshotButton() {
+        screenshotFeedbackTask = nil
+        guard let screenshotButton else { return }
+        screenshotButton.image = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "截图")
+        screenshotButton.contentTintColor = .white
+        screenshotButton.toolTip = "截图（保存到录制目录）"
+        screenshotButton.isEnabled = true
     }
 
     private func buildPanel() {
@@ -140,6 +175,17 @@ final class ControlBarController: NSObject {
         mic.isHidden = true
         micButton = mic
 
+        let camera = NSButton(
+            image: NSImage(systemSymbolName: "video.slash.fill", accessibilityDescription: "开启摄像头画中画") ?? NSImage(),
+            target: self,
+            action: #selector(cameraClicked)
+        )
+        camera.isBordered = false
+        camera.contentTintColor = NSColor.white.withAlphaComponent(0.4)
+        camera.toolTip = "开启摄像头画中画"
+        camera.setFrameSize(NSSize(width: 24, height: 24))
+        cameraButton = camera
+
         // 右侧一个红色停止键，不再单独放取消键
         let stop = NSButton(title: " 停止", target: self, action: #selector(stopClicked))
         stop.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "停止并保存")
@@ -152,7 +198,7 @@ final class ControlBarController: NSObject {
         stop.setFrameSize(NSSize(width: 74, height: 28))
         stop.keyEquivalent = "\r"
 
-        let stack = NSStackView(views: [pause, label, screenshot, mic, NSView(), stop])
+        let stack = NSStackView(views: [pause, label, screenshot, camera, mic, NSView(), stop])
         stack.orientation = .horizontal
         stack.spacing = 12
         stack.alignment = .centerY
@@ -219,6 +265,7 @@ final class ControlBarController: NSObject {
     @objc private func pauseClicked() { onTogglePause?() }
     @objc private func screenshotClicked() { onScreenshot?() }
     @objc private func micClicked() { onToggleMic?() }
+    @objc private func cameraClicked() { onToggleCamera?() }
 }
 
 final class ControlBarView: NSView {

@@ -19,6 +19,8 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private let writer: RecordingWriter
     private let counters: CaptureCounters
     private let useSystemAudio: Bool
+    /// 摄像头画中画：不为 nil 时每帧先合成再写入
+    private let compositor: CameraOverlayCompositor?
     private var stream: SCStream?
     private let frameLock = NSLock()
     private var lastPixelBuffer: CVPixelBuffer?
@@ -35,9 +37,11 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         return Self.imageContext.createCGImage(image, from: image.extent)
     }
 
-    public init(writer: RecordingWriter, counters: CaptureCounters, systemAudio: Bool) {
+    public init(writer: RecordingWriter, counters: CaptureCounters, systemAudio: Bool,
+                cameraOverlay: CameraOverlaySource? = nil) {
         self.writer = writer
         self.counters = counters
+        self.compositor = cameraOverlay.map { CameraOverlayCompositor(source: $0) }
         if #available(macOS 13.0, *) {
             self.useSystemAudio = systemAudio
         } else {
@@ -161,11 +165,12 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         switch outputType {
         case .screen:
             guard Self.isCompleteFrame(sampleBuffer) else { return }
+            let output = compositor?.composite(sampleBuffer) ?? sampleBuffer
             counters.frameCaptured()
             frameLock.lock()
-            lastPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+            lastPixelBuffer = CMSampleBufferGetImageBuffer(output)
             frameLock.unlock()
-            switch writer.appendVideo(sampleBuffer) {
+            switch writer.appendVideo(output) {
             case .written: counters.frameWritten()
             case .notReady: counters.frameDroppedBusy()
             case .invalid: counters.frameDroppedInvalid()

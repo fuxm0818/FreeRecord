@@ -82,6 +82,28 @@ final class AppSettings: ObservableObject {
     @Published var clickHighlightEnabled: Bool {
         didSet { defaults.set(clickHighlightEnabled, forKey: "clickHighlightEnabled") }
     }
+    /// 录屏时叠加摄像头画中画
+    @Published var cameraEnabled: Bool {
+        didSet { defaults.set(cameraEnabled, forKey: "camera.enabled") }
+    }
+    /// 指定摄像头 uniqueID；空串 = 系统默认摄像头
+    @Published var cameraDeviceID: String {
+        didSet { defaults.set(cameraDeviceID, forKey: "camera.deviceID") }
+    }
+    @Published var cameraMirrored: Bool {
+        didSet { defaults.set(cameraMirrored, forKey: "camera.mirrored") }
+    }
+    /// 画中画宽度占录制画面宽度的比例，可在预览窗上滚轮/拖角随时改
+    @Published var cameraSize: Double {
+        didSet { defaults.set(cameraSize, forKey: "camera.size") }
+    }
+    /// 画中画中心位置（归一化，左下原点），拖动预览窗时写回
+    @Published var cameraCenterX: Double {
+        didSet { defaults.set(cameraCenterX, forKey: "camera.centerX") }
+    }
+    @Published var cameraCenterY: Double {
+        didSet { defaults.set(cameraCenterY, forKey: "camera.centerY") }
+    }
     @Published var hotkeysEnabled: Bool {
         didSet { defaults.set(hotkeysEnabled, forKey: "hotkeysEnabled") }
     }
@@ -97,6 +119,10 @@ final class AppSettings: ObservableObject {
             OperatingSystemVersion(majorVersion: 13, minorVersion: 0, patchVersion: 0)
         )
     }
+
+    /// 画中画大小可调区间（与预览窗拖角共用）
+    static let cameraSizeRange = Double(CameraOverlayPlacement.minSizeFraction)
+        ... Double(CameraOverlayPlacement.maxSizeFraction)
 
     /// 按场景读取声音配置
     func audio(for scene: AudioScene) -> AudioSource {
@@ -133,6 +159,13 @@ final class AppSettings: ObservableObject {
         showsCursor = d.object(forKey: "showsCursor") as? Bool ?? true
         countdownEnabled = d.object(forKey: "countdownEnabled") as? Bool ?? true
         clickHighlightEnabled = d.object(forKey: "clickHighlightEnabled") as? Bool ?? false
+        cameraEnabled = d.object(forKey: "camera.enabled") as? Bool ?? false
+        cameraDeviceID = d.string(forKey: "camera.deviceID") ?? ""
+        cameraMirrored = d.object(forKey: "camera.mirrored") as? Bool ?? true
+        let storedCameraSize = d.object(forKey: "camera.size") as? Double ?? 0.24
+        cameraSize = min(max(storedCameraSize, Self.cameraSizeRange.lowerBound), Self.cameraSizeRange.upperBound)
+        cameraCenterX = d.object(forKey: "camera.centerX") as? Double ?? 0.82
+        cameraCenterY = d.object(forKey: "camera.centerY") as? Double ?? 0.20
         hotkeysEnabled = d.object(forKey: "hotkeysEnabled") as? Bool ?? true
         launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
         if let path = d.string(forKey: "saveDirectory") {

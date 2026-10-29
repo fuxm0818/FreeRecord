@@ -64,7 +64,7 @@ final class RecordingCoordinator {
     private var systemAudioCapture: AudioDeviceCapture?
     private var currentSize: (width: Int, height: Int)?
     /// 因缺屏幕录制权限而没启动成的录制，授权后自动续上
-    private var pendingStart: (source: CaptureSource?, settings: CaptureSettings)?
+    private var pendingStart: (source: CaptureSource?, settings: CaptureSettings, cameraOverlay: CameraOverlaySource?)?
     /// 启动门控进行中（采集已启动、尚未宣布 recording）：挡住重复点击开始
     /// 采集源已启动、门控等待中（此时 state 仍为 idle，入口必须据此挡住重复触发）
     private(set) var isPreparing = false
@@ -75,11 +75,11 @@ final class RecordingCoordinator {
         let granted = await Task.detached { CGPreflightScreenCaptureAccess() }.value
         guard granted else { return }
         pendingStart = nil
-        await startSession(source: pending.source, settings: pending.settings)
+        await startSession(source: pending.source, settings: pending.settings, cameraOverlay: pending.cameraOverlay)
     }
 
-    func start(source: CaptureSource, settings: CaptureSettings) async {
-        await startSession(source: source, settings: settings)
+    func start(source: CaptureSource, settings: CaptureSettings, cameraOverlay: CameraOverlaySource? = nil) async {
+        await startSession(source: source, settings: settings, cameraOverlay: cameraOverlay)
     }
 
     /// 录制音频（无画面），输出 .m4a
@@ -87,7 +87,12 @@ final class RecordingCoordinator {
         await startSession(source: nil, settings: settings, levelHandler: onLevel)
     }
 
-    private func startSession(source: CaptureSource?, settings: CaptureSettings, levelHandler: ((Float) -> Void)? = nil) async {
+    private func startSession(
+        source: CaptureSource?,
+        settings: CaptureSettings,
+        levelHandler: ((Float) -> Void)? = nil,
+        cameraOverlay: CameraOverlaySource? = nil
+    ) async {
         guard state == .idle, !isPreparing else { return }
         isPreparing = true
         defer { isPreparing = false }
@@ -111,7 +116,7 @@ final class RecordingCoordinator {
         if needsScreenPermission {
             let screenGranted = await Task.detached { CGPreflightScreenCaptureAccess() }.value
             guard screenGranted else {
-                pendingStart = (source, settings)
+                pendingStart = (source, settings, cameraOverlay)
                 delegate?.recordingPermissionNeeded()
                 return
             }
@@ -164,7 +169,7 @@ final class RecordingCoordinator {
             self.counters = counters
             var screen: ScreenCapture?
             if let source {
-                let capture = ScreenCapture(writer: writer, counters: counters, systemAudio: hasSystem)
+                let capture = ScreenCapture(writer: writer, counters: counters, systemAudio: hasSystem, cameraOverlay: cameraOverlay)
                 capture.onError = { [weak self] message in
                     Task { @MainActor in self?.captureInterrupted(message: message) }
                 }
@@ -430,7 +435,7 @@ final class RecordingCoordinator {
         // 上报文件真实时长：墙钟 elapsed 只说明录了多久，说明不了文件里有多少
         do {
             let url = try await writer.finish()
-            Self.appendAlignmentLog(writer: writer, directory: saveDirectory)
+            Self.appendAlignmentLog(writer: writer)
             let real = await Self.movieDuration(url)
             reportSaved(url: url, writer: writer, size: size, duration: real ?? duration, askToSave: askToSave)
         } catch {
@@ -469,17 +474,36 @@ final class RecordingCoordinator {
         return seconds.isFinite && seconds > 0 ? seconds : nil
     }
 
-    /// 把音画对齐数据追加到输出目录的 音画对齐诊断.log（排查音画不同步的实锤数据）
-    private static func appendAlignmentLog(writer: RecordingWriter, directory: URL) {
+    /// 诊断日志统一写到 ~/Library/Logs/FreeRecord/，录制输出目录只留成品与截图
+    static var diagnosticsDirectory: URL {
+        let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library")
+        return base.appendingPathComponent("Logs/FreeRecord", isDirectory: true)
+    }
+
+    /// 把音画对齐数据追加到诊断目录的 音画对齐诊断.log（排查音画不同步的实锤数据）
+    private static func appendAlignmentLog(writer: RecordingWriter) {
         guard let report = writer.alignmentReport() else { return }
-        let logURL = directory.appendingPathComponent("音画对齐诊断.log")
+        append(report + "\n\n", to: diagnosticsDirectory.appendingPathComponent("音画对齐诊断.log"))
+    }
+
+    /// 把写入器现场追加到诊断目录的 编码器诊断.log，返回路径供弹窗提示
+    private static func appendDiagnostics(writer: RecordingWriter?, message: String) -> String? {
+        guard let writer else { return nil }
+        let logURL = diagnosticsDirectory.appendingPathComponent("编码器诊断.log")
+        append("触发：\(message)\n" + writer.diagnostics() + "\n\n", to: logURL)
+        return logURL.path
+    }
+
+    private static func append(_ text: String, to logURL: URL) {
+        let directory = logURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if let handle = try? FileHandle(forWritingTo: logURL) {
             handle.seekToEndOfFile()
-            handle.write(Data((report + "\n\n").utf8))
+            handle.write(Data(text.utf8))
             try? handle.close()
         } else {
-            try? (report + "\n\n").write(to: logURL, atomically: true, encoding: .utf8)
+            try? text.write(to: logURL, atomically: true, encoding: .utf8)
         }
     }
 
@@ -497,7 +521,7 @@ final class RecordingCoordinator {
             pausedSince = nil
         }
         // -16341 这类错误没有明文原因，先把现场落到文件里，下次就能看着现场修而不是猜
-        let logPath = Self.appendDiagnostics(writer: writer, message: message, directory: saveDirectory)
+        let logPath = Self.appendDiagnostics(writer: writer, message: message)
         let elapsedSeconds = Int(elapsed.rounded())
         var shown = message
         if let logPath { shown += "\n诊断已写入：\(logPath)" }
@@ -510,22 +534,6 @@ final class RecordingCoordinator {
             await self?.complete(save: true, askToSave: false)
             self?.delegate?.recordingFailed(message: "采集中断，已保存已录部分。\n\(shown)")
         }
-    }
-
-    /// 把写入器现场追加到输出目录的 编码器诊断.log，返回路径供弹窗提示
-    private static func appendDiagnostics(writer: RecordingWriter?, message: String, directory: URL) -> String? {
-        guard let writer else { return nil }
-        let text = "触发：\(message)\n" + writer.diagnostics() + "\n\n"
-        let logURL = directory.appendingPathComponent("编码器诊断.log")
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        if let handle = try? FileHandle(forWritingTo: logURL) {
-            handle.seekToEndOfFile()
-            handle.write(Data(text.utf8))
-            try? handle.close()
-        } else {
-            try? text.write(to: logURL, atomically: true, encoding: .utf8)
-        }
-        return logURL.path
     }
 
     private static func displayUnderMouse(in content: SCShareableContent) -> SCDisplay? {
