@@ -396,6 +396,46 @@ final class RegionFrameView: NSView {
     private var activeHandle: Handle = .none
     private var dragStart: NSPoint?
     private var originalRect: NSRect = .zero
+    private var hoverTracking: NSTrackingArea?
+
+    // 光靠 addCursorRect 在这个非激活浮窗上不刷光标，悬停位置自己 set() 一次
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        hoverTracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard editable else { return }
+        let handle = handle(at: convert(event.locationInWindow, from: nil))
+        (cursorZone(for: handle)?.cursor ?? .pointingHand).set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard editable else { return }
+        NSCursor.arrow.set()
+    }
+
+    /// 热区 → 与画中画小窗同一套光标：四角对角双向、四边轴向双向
+    private func cursorZone(for handle: Handle) -> ResizeZone? {
+        switch handle {
+        case .nw: return .topLeft
+        case .n: return .top
+        case .ne: return .topRight
+        case .e: return .right
+        case .se: return .bottomRight
+        case .s: return .bottom
+        case .sw: return .bottomLeft
+        case .w: return .left
+        case .move, .none: return nil
+        }
+    }
 
     override func resetCursorRects() {
         guard editable else { return }
@@ -519,10 +559,13 @@ final class RegionFrameView: NSView {
         activeHandle = handle(at: point)
         dragStart = point
         originalRect = bounds
+        cursorZone(for: activeHandle)?.cursor.set()
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard editable, let start = dragStart else { return }
+        // 缩放过程中指针会离开原热区，光标按按下时定的手柄守到底
+        cursorZone(for: activeHandle)?.cursor.set()
         let point = convert(event.locationInWindow, from: nil)
         let delta = NSPoint(x: point.x - start.x, y: point.y - start.y)
         var rect = originalRect
@@ -566,6 +609,8 @@ final class RegionFrameView: NSView {
         dragStart = nil
         activeHandle = .none
         controller?.dragEnded()
+        let point = convert(event.locationInWindow, from: nil)
+        (cursorZone(for: handle(at: point))?.cursor ?? .pointingHand).set()
     }
 
     private func apply(rect: NSRect) {

@@ -26,6 +26,11 @@ enum ResizeZone: CaseIterable {
         return nil
     }
 
+    /// 该点命中的热区光标；不在任何热区里返回 nil（调用方自己决定退回什么光标）
+    static func cursor(at point: NSPoint, in rect: NSRect, band: CGFloat) -> NSCursor? {
+        zone(at: point, in: rect, band: band)?.cursor
+    }
+
     /// 8 块互不重叠的光标区域（角落优先，剩下的算边）
     static func cursorZones(in bounds: NSRect, band: CGFloat) -> [(NSRect, NSCursor)] {
         let corner = NSRect(x: bounds.minX, y: bounds.minY, width: band, height: band)

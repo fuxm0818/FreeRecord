@@ -52,9 +52,44 @@ private final class CameraPreviewView: NSView {
     private var resizeStartWidth: CGFloat = 0
     private var resizeStartMouse: NSPoint?
     private weak var grip: NSView?
+    private var hoverTracking: NSTrackingArea?
 
     // 非激活浮窗用 performDrag/isMovableByWindowBackground 拖不动或坐标错乱，这里按屏幕坐标手动跟手
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    // 只登记 addCursorRect 时这个非激活浮窗不刷光标，改为跟踪悬停位置自己设
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        hoverTracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        applyHoverCursor(for: event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        applyHoverCursor(for: event)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        applyHoverCursor(for: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.arrow.set()
+    }
+
+    private func applyHoverCursor(for event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        (ResizeZone.cursor(at: point, in: bounds, band: pipResizeBand) ?? .arrow).set()
+    }
 
     override func mouseDown(with event: NSEvent) {
         window?.orderFrontRegardless()
@@ -64,6 +99,7 @@ private final class CameraPreviewView: NSView {
             resizeZone = zone
             resizeStartWidth = bounds.width
             resizeStartMouse = NSEvent.mouseLocation
+            zone.cursor.set()
             return
         }
         isResizing = false
@@ -77,6 +113,7 @@ private final class CameraPreviewView: NSView {
         if isResizing, let zone = resizeZone {
             guard let start = resizeStartMouse else { return }
             let now = NSEvent.mouseLocation
+            zone.cursor.set()
             // 小窗锁 16:9，纵向位移换算成宽度（往下/往上 1pt 等于宽度 16/9pt）。
             // 一律相对按下起点算：绝对「光标 x - 窗口左缘」在窗口被边界夹住时会越算越小。
             // 角上有两个方向，取更跟手的那个
@@ -102,6 +139,7 @@ private final class CameraPreviewView: NSView {
             resizeZone = nil
             resizeStartMouse = nil
             onResizeEnded?()
+            applyHoverCursor(for: event)
             return
         }
         isResizing = false
@@ -385,6 +423,7 @@ final class CameraPiPController: NSObject, NSWindowDelegate {
         panel.hasShadow = true
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
+        panel.acceptsMouseMovedEvents = true
         panel.delegate = self
 
         let container = CameraPreviewView(frame: NSRect(origin: .zero, size: NSSize(width: 320, height: 180)))
