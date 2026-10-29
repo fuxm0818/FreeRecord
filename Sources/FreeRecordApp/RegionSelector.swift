@@ -275,8 +275,9 @@ final class RegionOverlayView: NSView {
         dragStart = nil
         let end = convert(event.locationInWindow, from: nil)
         let rect = Self.rect(from: start, to: end)
-        if rect.width >= 20, rect.height >= 20, let screen {
-            let global = convert(rect, to: nil)
+        if rect.width >= 20, rect.height >= 20, let screen, let window {
+            // convert(_:to: nil) 只到窗口本地坐标，非主屏（origin 不为 0）必须再转屏幕坐标
+            let global = window.convertToScreen(convert(rect, to: nil))
             selector?.select(screen: screen, rect: global)
             return
         }

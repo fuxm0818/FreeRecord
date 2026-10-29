@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private enum PendingTarget {
         case screen(display: SCDisplay, screen: NSScreen)
         case window(SCWindow)
+        /// rect 统一用屏幕全局坐标（NS 系，主屏左下原点），开录时才换算到显示器本地坐标
         case region(display: SCDisplay, screen: NSScreen, rect: CGRect)
     }
     private var pendingTarget: PendingTarget?
@@ -347,7 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         pendingTarget = .window(window)
         let scale = Self.screenScale(for: window.frame)
         preRecordBar.show(
-            target: .windowRect(window.frame),
+            target: .windowRect(Self.nsRect(fromCG: window.frame)),
             settings: settings,
             pixelSize: NSSize(width: window.frame.width * scale, height: window.frame.height * scale),
             pixelScale: scale
@@ -460,10 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                     alert("没有找到对应的显示器。")
                     return
                 }
-                let x = globalRect.origin.x - screen.frame.origin.x
-                let y = screen.frame.maxY - globalRect.maxY
-                let rect = CGRect(x: x, y: y, width: globalRect.width, height: globalRect.height).integral
-                pendingTarget = .region(display: display, screen: screen, rect: rect)
+                pendingTarget = .region(display: display, screen: screen, rect: globalRect)
                 regionFrame.show(screen: screen, rect: globalRect, editable: true)
                 let scale = screen.backingScaleFactor
                 preRecordBar.show(
@@ -521,15 +519,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         switch pending {
         case .region(let display, let screen, let rect):
             regionFrame.setEditable(false)
+            // 屏幕全局坐标（NS 系）→ 显示器本地坐标（CG 系，左上原点）
             let x = rect.origin.x - screen.frame.origin.x
             let y = screen.frame.maxY - rect.maxY
             let cgRect = CGRect(x: x, y: y, width: rect.width, height: rect.height).integral
-            recordingAnchor = NSRect(
-                x: screen.frame.minX + rect.minX,
-                y: screen.frame.maxY - rect.height - rect.minY,
-                width: rect.width,
-                height: rect.height
-            )
+            recordingAnchor = rect
             // 区域模式：宽高就是选区本身（按像素录制），不再缩放
             var capture = currentCaptureSettings(scale: screen.backingScaleFactor)
             capture.targetHeight = 0
@@ -556,7 +550,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     }
 
     private static func screenScale(for rect: NSRect) -> CGFloat {
-        NSScreen.screens.first { $0.frame.intersects(rect) }?.backingScaleFactor ?? 2
+        let screenRect = Self.nsRect(fromCG: rect)
+        return NSScreen.screens.first { $0.frame.intersects(screenRect) }?.backingScaleFactor ?? 2
     }
 
     // MARK: - 状态
@@ -569,6 +564,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                 audioWindow.setRecording(true, paused: false)
             } else {
                 audioWindow.hide()
+                // 真正开录后绿框就是残留：切到别的屏幕还挂着，容易被当成没清干净
+                regionFrame.hide()
                 controlBar.show(anchor: recordingAnchor, microphone: coordinator.hasMicrophoneTrack)
                 controlBar.setPaused(false)
                 if settings.clickHighlightEnabled { clickHighlight.start() }

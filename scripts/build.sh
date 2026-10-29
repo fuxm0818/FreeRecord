@@ -20,6 +20,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create "$ARM_BIN" "$X86_BIN" -output "$APP/Contents/MacOS/$BIN_NAME"
 cp Resources/App-Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # TCC 授权按代码签名身份记账：ad-hoc 每次构建 cdhash 都变，授权就失效。
 # 优先用 keychain 里的稳定身份（CODESIGN_IDENTITY 或 "FreeRec Dev"），权限可在多次构建间保留。
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
