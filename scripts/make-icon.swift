@@ -1,5 +1,7 @@
 #!/usr/bin/env swift
-// 生成 Resources/AppIcon.icns：绿底圆角方块 + 白色选区角标 + 红色录制点。
+// 生成 Resources/AppIcon.icns：相机字形与菜单栏 camera.on.rectangle 一致。
+// 画布必须满幅不透明：macOS 26 会给带透明边距的旧式图标再套一层底板，
+// 满幅图标则由系统按自己的超椭圆裁形；旧系统显示为方形底板。
 // 用法：swift scripts/make-icon.swift
 import AppKit
 
@@ -7,6 +9,40 @@ let outputURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     .appendingPathComponent("Resources/AppIcon.icns")
 let iconsetURL = FileManager.default.temporaryDirectory
     .appendingPathComponent("FreeRecord.iconset", isDirectory: true)
+
+func roundedRect(_ r: NSRect, _ radius: CGFloat) -> NSBezierPath {
+    NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius)
+}
+
+// 字形几何都按方框宽度 W 的比例定义，任意像素尺寸下等比缩放
+func cameraGlyph(box: NSRect, dx: CGFloat) -> (window: NSBezierPath, body: NSBezierPath, lens: NSRect, dot: NSRect) {
+    let W = box.width
+    let x0 = box.minX + dx
+    let window = roundedRect(
+        NSRect(x: x0 + 0.02 * W, y: box.minY + 0.30 * W, width: 0.66 * W, height: 0.56 * W),
+        0.105 * W
+    )
+    let bodyRect = NSRect(x: x0 + 0.18 * W, y: box.minY + 0.06 * W, width: 0.72 * W, height: 0.50 * W)
+    let body = roundedRect(bodyRect, 0.095 * W)
+    let hump = roundedRect(
+        NSRect(x: bodyRect.midX - 0.15 * W, y: bodyRect.maxY - 0.055 * W, width: 0.30 * W, height: 0.115 * W),
+        0.045 * W
+    )
+    body.append(hump)
+    let lens = NSRect(
+        x: bodyRect.midX - 0.125 * W,
+        y: bodyRect.minY + 0.075 * W,
+        width: 0.25 * W,
+        height: 0.25 * W
+    )
+    let dot = NSRect(
+        x: bodyRect.maxX - 0.155 * W,
+        y: bodyRect.maxY - 0.165 * W,
+        width: 0.06 * W,
+        height: 0.06 * W
+    )
+    return (window, body, lens, dot)
+}
 
 func drawIcon(pixels: Int) -> NSBitmapImageRep {
     let size = CGFloat(pixels)
@@ -29,85 +65,108 @@ func drawIcon(pixels: Int) -> NSBitmapImageRep {
     NSGraphicsContext.current = graphics
     let ctx = graphics.cgContext
     ctx.setShouldAntialias(true)
-    ctx.interpolationQuality = .high
 
-    // 圆角方块的几何：留出 macOS 图标网格要求的边距
-    let inset = size * 0.084
-    let squircle = NSRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
-    let radius = squircle.width * 0.225
-    let shape = NSBezierPath(roundedRect: squircle, xRadius: radius, yRadius: radius)
+    // 满幅画布：Alpha 必须覆盖到四边，否则 macOS 26 会再套一层底板
+    let rect = NSRect(x: 0, y: 0, width: size, height: size)
 
-    // 底板投影
+    // 浅色渐变底
+    let gradient = NSGradient(colors: [
+        NSColor(srgbRed: 1.00, green: 1.00, blue: 1.00, alpha: 1),
+        NSColor(srgbRed: 0.90, green: 0.90, blue: 0.925, alpha: 1),
+    ])!
+    gradient.draw(in: rect, angle: -90)
+
+    // 顶部柔光，避免纯白底板发平
     ctx.saveGState()
-    ctx.setShadow(
-        offset: CGSize(width: 0, height: -size * 0.008),
-        blur: size * 0.022,
-        color: NSColor.black.withAlphaComponent(0.35).cgColor
-    )
-    NSColor.black.setFill()
-    shape.fill()
+    ctx.clip(to: rect)
+    let glow = NSGradient(colors: [
+        NSColor.white.withAlphaComponent(0.55),
+        NSColor.white.withAlphaComponent(0),
+    ])!
+    glow.draw(in: NSRect(x: rect.minX, y: rect.midY, width: rect.width, height: rect.height / 2), angle: -90)
     ctx.restoreGState()
 
-    // 绿色渐变底
-    let gradient = NSGradient(colors: [
-        NSColor(srgbRed: 0.263, green: 0.855, blue: 0.451, alpha: 1),
-        NSColor(srgbRed: 0.070, green: 0.545, blue: 0.266, alpha: 1),
-    ])!
-    gradient.draw(in: shape, angle: -90)
+    // ---- 字形：窗口描边 + 实心相机，与菜单栏 camera.on.rectangle 同构 ----
+    let baseScale: CGFloat = pixels >= 64 ? 0.58 : 0.72
+    let W = size * baseScale
+    let glyphH = W * 0.86
+    var box = NSRect(x: (size - W) / 2, y: (size - glyphH) / 2 - 0.030 * W, width: W, height: glyphH)
+    var dx: CGFloat = 0.04 * W
+    if pixels < 64 {
+        // 小尺寸窗口描边会糊成一团，只保留相机；按机身（含凸起）而非整块字形居中
+        box.origin.y = size / 2 - 0.34 * W
+        dx = -0.04 * W
+    }
+    let parts = cameraGlyph(box: box, dx: dx)
+    let detail = pixels >= 64 ? size * 0.030 : size * 0.040
+    let ink = NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1)
+    let bgTone = NSColor(srgbRed: 0.93, green: 0.93, blue: 0.95, alpha: 1)
 
-    // 顶部高光边，避免纯色底板发闷
-    let highlight = NSBezierPath(
-        roundedRect: squircle.insetBy(dx: size * 0.006, dy: size * 0.006),
-        xRadius: radius,
-        yRadius: radius
-    )
-    NSColor.white.withAlphaComponent(0.22).setStroke()
-    highlight.lineWidth = max(1, size * 0.007)
-    highlight.stroke()
-
-    // 选区角标（小于 64px 时省略，避免糊成一团）
     if pixels >= 64 {
-        let frame = squircle.insetBy(dx: squircle.width * 0.20, dy: squircle.width * 0.20)
-        let length = frame.width * 0.30
-        let lineWidth = size * 0.042
-        let brackets = NSBezierPath()
-        brackets.lineWidth = lineWidth
-        brackets.lineCapStyle = .round
-        brackets.lineJoinStyle = .round
-        let corners: [(NSPoint, NSPoint, NSPoint)] = [
-            (NSPoint(x: frame.minX, y: frame.maxY), NSPoint(x: frame.minX, y: frame.maxY - length), NSPoint(x: frame.minX + length, y: frame.maxY)),
-            (NSPoint(x: frame.maxX, y: frame.maxY), NSPoint(x: frame.maxX, y: frame.maxY - length), NSPoint(x: frame.maxX - length, y: frame.maxY)),
-            (NSPoint(x: frame.minX, y: frame.minY), NSPoint(x: frame.minX, y: frame.minY + length), NSPoint(x: frame.minX + length, y: frame.minY)),
-            (NSPoint(x: frame.maxX, y: frame.minY), NSPoint(x: frame.maxX, y: frame.minY + length), NSPoint(x: frame.maxX - length, y: frame.minY)),
-        ]
-        for (start, mid, end) in corners {
-            brackets.move(to: start)
-            brackets.line(to: mid)
-            brackets.move(to: start)
-            brackets.line(to: end)
-        }
-        NSColor.white.withAlphaComponent(0.96).setStroke()
-        brackets.stroke()
+        // 先画窗口，实心相机再盖住交叠处
+        parts.window.lineWidth = detail
+        ink.setStroke()
+        parts.window.stroke()
     }
 
-    // 中心录制点
-    let dotRadius = size * (pixels >= 64 ? 0.088 : 0.15)
-    let dotRect = NSRect(
-        x: size / 2 - dotRadius,
-        y: size / 2 - dotRadius,
-        width: dotRadius * 2,
-        height: dotRadius * 2
+    // 相机投影
+    ctx.saveGState()
+    ctx.setShadow(
+        offset: CGSize(width: 0, height: -size * 0.007),
+        blur: size * 0.016,
+        color: NSColor.black.withAlphaComponent(0.28).cgColor
     )
-    let dot = NSBezierPath(ovalIn: dotRect)
-    let dotGradient = NSGradient(colors: [
-        NSColor(srgbRed: 1.0, green: 0.400, blue: 0.337, alpha: 1),
-        NSColor(srgbRed: 0.851, green: 0.157, blue: 0.157, alpha: 1),
+    ink.setFill()
+    parts.body.fill()
+    ctx.restoreGState()
+
+    // 机身渐变，让实心块有体积
+    ctx.saveGState()
+    parts.body.addClip()
+    let bodyGradient = NSGradient(colors: [
+        NSColor(srgbRed: 0.24, green: 0.24, blue: 0.27, alpha: 1),
+        NSColor(srgbRed: 0.07, green: 0.07, blue: 0.09, alpha: 1),
     ])!
-    dotGradient.draw(in: dot, angle: -90)
-    // 白色描边让红点在绿底上有分界
-    NSColor.white.withAlphaComponent(0.9).setStroke()
-    dot.lineWidth = max(1, size * 0.010)
-    dot.stroke()
+    bodyGradient.draw(in: box, angle: -90)
+    ctx.restoreGState()
+
+    // 镜头：底色环 + 内孔
+    let lensRingWidth = detail * (pixels >= 64 ? 0.95 : 1.05)
+    bgTone.setStroke()
+    let lensRing = NSBezierPath(ovalIn: parts.lens.insetBy(dx: lensRingWidth / 2, dy: lensRingWidth / 2))
+    lensRing.lineWidth = lensRingWidth
+    lensRing.stroke()
+    bgTone.withAlphaComponent(0.45).setFill()
+    NSBezierPath(ovalIn: parts.lens.insetBy(dx: lensRingWidth * 1.6, dy: lensRingWidth * 1.6)).fill()
+
+    // 镜头高光
+    if pixels >= 128 {
+        ctx.saveGState()
+        ctx.translateBy(x: parts.lens.midX, y: parts.lens.midY)
+        ctx.rotate(by: .pi / 4)
+        let spec = NSRect(
+            x: -parts.lens.width * 0.30,
+            y: parts.lens.height * 0.06,
+            width: parts.lens.width * 0.60,
+            height: parts.lens.height * 0.22
+        )
+        NSColor.white.withAlphaComponent(0.35).setFill()
+        NSBezierPath(ovalIn: spec).fill()
+        ctx.restoreGState()
+    }
+
+    // 录制红点
+    NSColor(srgbRed: 1.00, green: 0.27, blue: 0.23, alpha: 1).setFill()
+    NSBezierPath(ovalIn: parts.dot).fill()
+    if pixels >= 128 {
+        NSColor.white.withAlphaComponent(0.35).setFill()
+        NSBezierPath(ovalIn: NSRect(
+            x: parts.dot.minX + parts.dot.width * 0.18,
+            y: parts.dot.minY + parts.dot.height * 0.50,
+            width: parts.dot.width * 0.42,
+            height: parts.dot.height * 0.28
+        )).fill()
+    }
 
     NSGraphicsContext.restoreGraphicsState()
     return rep
