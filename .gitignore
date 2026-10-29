@@ -16,3 +16,6 @@ docs/内部对标分析-*.md
 # macOS
 .DS_Store
 *.ips
+
+# filter-branch 临时目录
+.git-rewrite/
