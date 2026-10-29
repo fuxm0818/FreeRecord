@@ -383,7 +383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     }
 
     private func startAudioRecording(_ audio: AudioSource) {
-        settings.audio = audio
+        // 只写「仅音频」场景自己的配置，不再覆写录屏的声音选择
+        settings.setAudio(audio, for: .audioOnly)
         let capture = CaptureSettings(fps: 30, targetHeight: 0, showsCursor: false, audio: audio, pixelScale: 1)
         Task { [weak self] in
             await self?.coordinator.startAudioOnly(settings: capture) { [weak self] level in

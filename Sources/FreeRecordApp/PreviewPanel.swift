@@ -16,6 +16,16 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     private var url: URL?
     private var renameHint: NSTextField?
 
+    /// 当前预览文件的元数据，裁剪后需要就地更新
+    private var currentDuration: TimeInterval = 0
+    private var currentWidth = 0
+    private var currentHeight = 0
+    private var currentFileSizeMB: Double = 0
+    private var currentAudioTrackCount = 0
+
+    /// 裁剪窗：按需懒加载，导出后回到预览并刷新信息
+    private lazy var trimPanel = TrimPanelController()
+
     func show(recording: SavedRecording) {
         if window == nil {
             buildWindow()
@@ -23,6 +33,12 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         guard let window else { return }
 
         url = recording.url
+        currentDuration = recording.duration
+        currentWidth = recording.width
+        currentHeight = recording.height
+        currentFileSizeMB = recording.fileSizeMB
+        currentAudioTrackCount = recording.audioTrackCount
+
         let player = AVPlayer(url: recording.url)
         self.player = player
         playerView?.player = player
@@ -123,7 +139,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let copy = iconButton("doc.on.doc", help: "复制路径", action: #selector(copyPath))
         let share = iconButton("square.and.arrow.up", help: "分享", action: #selector(shareFile))
         shareButton = share
-        let actions = NSStackView(views: [finder, trash, copy, share])
+        let trim = iconButton("scissors", help: "裁剪（无损，不重新编码）", action: #selector(trimClicked))
+        let actions = NSStackView(views: [finder, trash, copy, share, trim])
         actions.orientation = .horizontal
         actions.spacing = 16
         actions.translatesAutoresizingMaskIntoConstraints = false
@@ -328,6 +345,33 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         try? FileManager.default.removeItem(at: url)
         onFileChanged?()
         window?.performClose(nil)
+    }
+
+    @objc private func trimClicked() {
+        guard let url else { return }
+        let recording = SavedRecording(
+            url: url, duration: currentDuration,
+            width: currentWidth, height: currentHeight,
+            fileSizeMB: currentFileSizeMB,
+            audioTrackCount: currentAudioTrackCount
+        )
+        trimPanel.onExported = { [weak self] trimmed in
+            guard let self else { return }
+            self.url = trimmed.url
+            self.currentDuration = trimmed.duration
+            self.currentWidth = trimmed.width
+            self.currentHeight = trimmed.height
+            self.currentFileSizeMB = trimmed.fileSizeMB
+            self.currentAudioTrackCount = trimmed.audioTrackCount
+            self.nameField?.stringValue =
+                trimmed.url.deletingPathExtension().lastPathComponent
+            self.player = AVPlayer(url: trimmed.url)
+            self.playerView?.player = self.player
+            self.player?.play()
+            self.apply(recording: trimmed)
+            self.onFileChanged?()
+        }
+        trimPanel.show(recording: recording)
     }
 
     @objc private func closePanel() {

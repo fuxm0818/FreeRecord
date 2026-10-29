@@ -7,6 +7,9 @@ public final class CaptureCounters {
         public let droppedBusy: Int
         public let droppedInvalid: Int
         public let audioBuffers: Int
+        /// 分轨计数：供启动门控判断各音源是否已产出首帧
+        public let audioMicrophone: Int
+        public let audioSystem: Int
 
         public var droppedTotal: Int { droppedBusy + droppedInvalid }
     }
@@ -17,6 +20,8 @@ public final class CaptureCounters {
     private var droppedBusy = 0
     private var droppedInvalid = 0
     private var audio = 0
+    private var audioMicrophone = 0
+    private var audioSystem = 0
 
     public init() {}
 
@@ -40,13 +45,22 @@ public final class CaptureCounters {
         droppedInvalid += 1
     }
 
-    public func audioBuffer() {
+    public func audioBuffer(track: RecordingWriter.AudioTrack) {
         lock.lock(); defer { lock.unlock() }
         audio += 1
+        switch track {
+        case .microphone: audioMicrophone += 1
+        case .system: audioSystem += 1
+        }
     }
 
     public func snapshot() -> Snapshot {
         lock.lock(); defer { lock.unlock() }
-        return Snapshot(captured: captured, written: written, droppedBusy: droppedBusy, droppedInvalid: droppedInvalid, audioBuffers: audio)
+        return Snapshot(
+            captured: captured, written: written,
+            droppedBusy: droppedBusy, droppedInvalid: droppedInvalid,
+            audioBuffers: audio,
+            audioMicrophone: audioMicrophone, audioSystem: audioSystem
+        )
     }
 }

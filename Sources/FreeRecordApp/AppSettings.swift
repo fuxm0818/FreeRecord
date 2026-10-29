@@ -17,6 +17,12 @@ enum RecordMode: String, CaseIterable {
     }
 }
 
+/// 声音配置的使用场景：录屏与仅音频各存一份，互不串扰。
+enum AudioScene: String {
+    case screen
+    case audioOnly
+}
+
 struct QualityPreset: Identifiable, Equatable, Hashable {
     let id: String
     let name: String
@@ -46,8 +52,14 @@ final class AppSettings: ObservableObject {
     @Published var mode: RecordMode {
         didSet { defaults.set(mode.rawValue, forKey: "mode") }
     }
-    @Published var audio: AudioSource {
-        didSet { defaults.set(audio.rawValue, forKey: "audio") }
+    /// 录屏时的声音来源（全屏/窗口/区域共用）
+    @Published var audioForScreen: AudioSource {
+        didSet { defaults.set(audioForScreen.rawValue, forKey: "audio.screen") }
+    }
+    /// 仅音频录制时的声音来源；与录屏互不影响——此前是全局单份，
+    /// 「仅音频」的选择会覆写下次录屏的声音配置
+    @Published var audioForAudioOnly: AudioSource {
+        didSet { defaults.set(audioForAudioOnly.rawValue, forKey: "audio.audioOnly") }
     }
     @Published var targetHeight: Int {
         didSet { defaults.set(targetHeight, forKey: "targetHeight") }
@@ -86,7 +98,25 @@ final class AppSettings: ObservableObject {
         )
     }
 
+    /// 按场景读取声音配置
+    func audio(for scene: AudioScene) -> AudioSource {
+        switch scene {
+        case .screen: return audioForScreen
+        case .audioOnly: return audioForAudioOnly
+        }
+    }
+
+    /// 按场景写入声音配置
+    func setAudio(_ value: AudioSource, for scene: AudioScene) {
+        switch scene {
+        case .screen: audioForScreen = value
+        case .audioOnly: audioForAudioOnly = value
+        }
+    }
+
+    /// 录屏实际生效的声音配置（老系统不支持系统声采集时降级）
     var effectiveAudio: AudioSource {
+        let audio = audioForScreen
         guard audio.wantsSystemAudio, !supportsSystemAudio else { return audio }
         return audio.wantsMicrophone ? .microphone : .none
     }
@@ -94,7 +124,10 @@ final class AppSettings: ObservableObject {
     init() {
         let d = defaults
         mode = RecordMode(rawValue: d.string(forKey: "mode") ?? "") ?? .fullScreen
-        audio = AudioSource(rawValue: d.string(forKey: "audio") ?? "") ?? .microphone
+        // 迁移：旧版只有一份全局 "audio"，作为两种场景的初值
+        let legacyAudio = AudioSource(rawValue: d.string(forKey: "audio") ?? "") ?? .microphone
+        audioForScreen = AudioSource(rawValue: d.string(forKey: "audio.screen") ?? "") ?? legacyAudio
+        audioForAudioOnly = AudioSource(rawValue: d.string(forKey: "audio.audioOnly") ?? "") ?? legacyAudio
         targetHeight = d.object(forKey: "targetHeight") as? Int ?? 1080
         fps = d.object(forKey: "fps") as? Int ?? 30
         showsCursor = d.object(forKey: "showsCursor") as? Bool ?? true
@@ -109,8 +142,11 @@ final class AppSettings: ObservableObject {
                 .appendingPathComponent("Movies/自由录屏", isDirectory: true)
         }
         askNameOnSave = d.object(forKey: "askNameOnSave") as? Bool ?? false
-        if !supportsSystemAudio, audio.wantsSystemAudio {
-            audio = audio.wantsMicrophone ? .microphone : .none
+        if !supportsSystemAudio, audioForScreen.wantsSystemAudio {
+            audioForScreen = audioForScreen.wantsMicrophone ? .microphone : .none
+        }
+        if !supportsSystemAudio, audioForAudioOnly.wantsSystemAudio {
+            audioForAudioOnly = audioForAudioOnly.wantsMicrophone ? .microphone : .none
         }
     }
 
@@ -140,9 +176,9 @@ final class AppSettings: ObservableObject {
         targetHeight = preset.targetHeight
         fps = preset.fps
         if preset.audio.wantsSystemAudio, !supportsSystemAudio {
-            audio = preset.audio.wantsMicrophone ? .microphone : .none
+            setAudio(preset.audio.wantsMicrophone ? .microphone : .none, for: .screen)
         } else {
-            audio = preset.audio
+            setAudio(preset.audio, for: .screen)
         }
     }
 }

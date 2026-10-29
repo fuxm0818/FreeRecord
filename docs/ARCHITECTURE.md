@@ -18,6 +18,9 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 
 - 一条视频轨 + 最多两条独立 AAC 音轨（麦克风轨 0、系统声音轨 1），互不混音，后期可单独处理。
 - `RecordingCoordinator`（`Sources/FreeRecordApp/RecordingCoordinator.swift`）是唯一的状态机：`idle → recording ⇄ paused → finishing → idle`，负责创建 writer、启动采集、停止并收尾。界面上所有按钮最终都只调它。
+- **录制后的裁剪走 `CompositionEditor`（`Sources/FreeRecordCore/CompositionEditor.swift`）**：用 `AVMutableComposition`
+  按「要保留的区间」重排时间轴，再用 `AVAssetExportPresetPassthrough` 只转封装 —— **不重新编码**，画质无损。
+  视频轨与每条音轨**必须同步处理**，否则音画错位（与 `RecordingWriter.makeRetimed` 同一套约束）。
 
 ## 界面构成（纯代码，无 storyboard/xib）
 
@@ -27,7 +30,13 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 
 ## 新手最需要知道的 7 个实现点
 
-1. **自己的 UI 不会进画面。** `SCContentFilter` 会排除本 App 中标题等于 `ScreenCapture.hiddenWindowTitle` 或 `windowLayer >= 1000` 的窗口（见 `FreeRecordCore/ScreenCapture.swift`），浮动窗口本身还设了 `sharingType = .none`。新增浮动面板时**必须**带上这个标题，否则会被录进视频。
+1. **自己的 UI 不会进画面。** 靠两层保护，**缺一不可**（见 `ScreenCapture.ownHiddenWindows` 与各浮动面板的 `configureAsCaptureHiddenFloatingUI()`）：
+   - `title = ScreenCapture.hiddenWindowTitle` + `SCContentFilter(display:excludingWindows:)` —— 只挡**自家** SCK 采集；
+   - `sharingType = .none` —— **系统级**开关，Zoom / 会议 / QuickTime / 系统截图全挡。
+
+   新增浮动面板时**统一调用 `configureAsCaptureHiddenFloatingUI()`**，不要只设其中一个（只设 title：会出现在别人的屏幕共享里；只设 sharingType：自家采集的过滤逻辑对不上账）。
+
+   ⚠️ 例外：点击高亮窗口（`ClickHighlight`）**不要**调用 —— 它是刻意要被录进画面的效果。
 2. **分片 MP4。** `movieFragmentInterval = 5s`（`RecordingWriter`），崩溃或被强杀时已录内容仍可播放。代价是收尾失败时文件已经"写出去一大截"，所以 `RecordingCoordinator` 在 finish 抛错后会检查文件是否仍可播放，能播就照常进预览。
 3. **暂停是真压缩，不是打标记。** `RecordingWriter.makeRetimed` 用 `shift = 上一样本结束时间 − 当前样本相对 PTS` 把暂停时段从时间轴里挤掉，视频和每条音轨各自维护 shift。改这里要同时考虑三条轨。
 4. **停录有竞态。** `SCStream.stopCapture` 返回后仍可能补发队列里的帧，若此时已 `markAsFinished`，整个 `AVAssetWriter` 会进入 failed 并报「这项工作无法完成」。所以 `finish()` 先置 `finishing` 标志丢弃迟到样本，再在同一把锁下 markAsFinished。

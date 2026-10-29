@@ -247,6 +247,7 @@ public final class RecordingWriter {
         return Self.describe(writer.error) ?? "写入器未说明原因"
     }
 
+    /// input 忙就 1ms 一步等（最多 10ms），
     /// 等不到才放弃这一帧。立刻丢帧会让编码器一卡就静默丢光后续所有内容。
     private func waitUntilReady(_ input: AVAssetWriterInput) -> Bool {
         guard !input.isReadyForMoreMediaData else { return true }

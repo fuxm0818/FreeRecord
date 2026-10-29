@@ -60,7 +60,7 @@ public final class SystemAudioStreamCapture: NSObject, SCStreamOutput, SCStreamD
     public func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
         guard #available(macOS 13.0, *) else { return }
         guard outputType == .audio, sampleBuffer.isValid else { return }
-        counters.audioBuffer()
+        counters.audioBuffer(track: .system)
         _ = writer.appendAudio(sampleBuffer, track: .system)
         if let onLevel, let level = AudioDeviceCapture.rmsLevel(of: sampleBuffer) {
             onLevel(level)

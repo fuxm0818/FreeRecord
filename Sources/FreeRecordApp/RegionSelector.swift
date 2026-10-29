@@ -179,16 +179,11 @@ final class RegionOverlayPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
-        level = .screenSaver
-        isOpaque = false
-        backgroundColor = .clear
+        configureAsCaptureHiddenFloatingUI(level: .screenSaver)
         hasShadow = false
         ignoresMouseEvents = false
         // 悬停选窗依赖 mouseMoved，无边框面板默认不接收
         acceptsMouseMovedEvents = true
-        // 选区层只给用户看，任何捕获 API（含第三方录屏）都拍不到
-        sharingType = .none
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         setFrame(contentRect, display: true)
     }
 }
@@ -369,15 +364,10 @@ final class RegionFramePanel: NSPanel {
             backing: .buffered,
             defer: false
         )
-        level = .screenSaver
-        isOpaque = false
-        backgroundColor = .clear
+        configureAsCaptureHiddenFloatingUI(level: .screenSaver)
         hasShadow = false
         ignoresMouseEvents = !editable
         acceptsMouseMovedEvents = true
-        sharingType = .none
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        title = ScreenCapture.hiddenWindowTitle
         setFrame(contentRect, display: true)
     }
 }

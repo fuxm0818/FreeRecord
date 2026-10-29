@@ -57,13 +57,9 @@ final class PreRecordBarController: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
+        panel.configureAsCaptureHiddenFloatingUI()
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.title = ScreenCapture.hiddenWindowTitle
 
         let container = NSView(frame: NSRect(origin: .zero, size: size))
         let background = ControlBarView(frame: container.bounds)
@@ -99,12 +95,12 @@ final class PreRecordBarController: NSObject {
         let micButton = makeToggle(
             symbol: "mic.fill",
             tip: "麦克风",
-            isOn: settings.audio.wantsMicrophone
+            isOn: settings.audio(for: .screen).wantsMicrophone
         )
         let systemButton = makeToggle(
             symbol: "speaker.wave.2.fill",
             tip: systemAvailable ? "系统声音" : "系统声音需 macOS 13 或 BlackHole",
-            isOn: settings.audio.wantsSystemAudio && systemAvailable
+            isOn: settings.audio(for: .screen).wantsSystemAudio && systemAvailable
         )
         systemButton.isEnabled = systemAvailable
         let mouseButton = makeToggle(
@@ -203,7 +199,7 @@ final class PreRecordBarController: NSObject {
         }
         let mic = micButton?.state == .on
         let system = systemButton?.state == .on
-        settings.audio = mic && system ? .microphoneAndSystem : (mic ? .microphone : (system ? .system : .none))
+        settings.setAudio(mic && system ? .microphoneAndSystem : (mic ? .microphone : (system ? .system : .none)), for: .screen)
         settings.clickHighlightEnabled = mouseButton?.state == .on
         settings.fps = [15, 30, 60][max(0, fpsPopup?.indexOfSelectedItem ?? 1)]
         // 高度低于原始尺寸才算缩放；等于原始或用户没改就是原始分辨率
@@ -318,7 +314,7 @@ final class PreRecordBarController: NSObject {
         guard let settings = settingsRef else { return }
         let mic = micButton?.state == .on
         let system = systemButton?.state == .on
-        settings.audio = mic && system ? .microphoneAndSystem : (mic ? .microphone : (system ? .system : .none))
+        settings.setAudio(mic && system ? .microphoneAndSystem : (mic ? .microphone : (system ? .system : .none)), for: .screen)
         settings.clickHighlightEnabled = mouseButton?.state == .on
     }
 

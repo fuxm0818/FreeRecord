@@ -65,10 +65,12 @@ final class RecordingCoordinator {
     private var currentSize: (width: Int, height: Int)?
     /// 因缺屏幕录制权限而没启动成的录制，授权后自动续上
     private var pendingStart: (source: CaptureSource?, settings: CaptureSettings)?
+    /// 启动门控进行中（采集已启动、尚未宣布 recording）：挡住重复点击开始
+    private var isPreparing = false
 
     /// App 变为活跃时调用：权限已就绪就自动开始之前未启动成的录制
     func retryPendingStartIfReady() async {
-        guard state == .idle, let pending = pendingStart else { return }
+        guard state == .idle, !isPreparing, let pending = pendingStart else { return }
         let granted = await Task.detached { CGPreflightScreenCaptureAccess() }.value
         guard granted else { return }
         pendingStart = nil
@@ -85,7 +87,9 @@ final class RecordingCoordinator {
     }
 
     private func startSession(source: CaptureSource?, settings: CaptureSettings, levelHandler: ((Float) -> Void)? = nil) async {
-        guard state == .idle else { return }
+        guard state == .idle, !isPreparing else { return }
+        isPreparing = true
+        defer { isPreparing = false }
         pendingStart = nil
 
         let hasMic = settings.audio.wantsMicrophone
@@ -242,6 +246,12 @@ final class RecordingCoordinator {
                     return
                 }
             }
+
+            // 启动门控：等所有已启用音源产出首帧再开始计时。
+            // 各源 start() 返回只是管线就绪，首帧回调是异步的（SCK 系统声可达数百毫秒），
+            // 不等就宣布录制，用户立刻说话/播放的声音会落在音频轨起点之前——开头丢声。
+            // 超时兜底 2.5 秒：系统完全静音或设备异常时照常放行，不卡死开录。
+            await AudioStartGate.wait(counters: counters, mic: hasMic, system: hasSystem)
 
             startedAt = Date()
             accumulatedPaused = 0

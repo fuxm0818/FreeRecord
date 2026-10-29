@@ -172,7 +172,7 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             case .paused: break
             }
         case .audio:
-            counters.audioBuffer()
+            counters.audioBuffer(track: .system)
             _ = writer.appendAudio(sampleBuffer, track: .system)
         default:
             break

@@ -26,8 +26,8 @@ final class AudioRecordWindowController {
         if panel == nil {
             build(settings: settings)
         }
-        micSwitch?.state = settings.audio.wantsMicrophone ? .on : .off
-        systemSwitch?.state = settings.audio.wantsSystemAudio ? .on : .off
+        micSwitch?.state = settings.audio(for: .audioOnly).wantsMicrophone ? .on : .off
+        systemSwitch?.state = settings.audio(for: .audioOnly).wantsSystemAudio ? .on : .off
         if micSwitch?.state == .off, systemSwitch?.state == .off {
             micSwitch?.state = .on
         }
@@ -72,13 +72,9 @@ final class AudioRecordWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
+        panel.configureAsCaptureHiddenFloatingUI()
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.title = ScreenCapture.hiddenWindowTitle
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         let background = ControlBarView(frame: container.bounds)

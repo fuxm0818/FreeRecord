@@ -91,13 +91,9 @@ final class ControlBarController: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
+        panel.configureAsCaptureHiddenFloatingUI()
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.title = ScreenCapture.hiddenWindowTitle
 
         let container = NSView(frame: NSRect(origin: .zero, size: size))
         let background = ControlBarView(frame: container.bounds)

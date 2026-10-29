@@ -80,13 +80,9 @@ final class CameraRecordWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
+        panel.configureAsCaptureHiddenFloatingUI()
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.title = ScreenCapture.hiddenWindowTitle
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         container.wantsLayer = true

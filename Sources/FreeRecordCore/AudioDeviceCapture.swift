@@ -93,7 +93,7 @@ public final class AudioDeviceCapture: NSObject, AVCaptureAudioDataOutputSampleB
     }
 
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        counters.audioBuffer()
+        counters.audioBuffer(track: track)
         if !isMuted {
             _ = writer.appendAudio(sampleBuffer, track: track)
         }
