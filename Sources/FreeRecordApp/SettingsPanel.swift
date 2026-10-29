@@ -32,6 +32,10 @@ final class SettingsPanelController {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    func hide() {
+        window?.orderOut(nil)
+    }
 }
 
 struct SettingsView: View {

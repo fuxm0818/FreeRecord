@@ -27,6 +27,9 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
     private var url: URL?
     private var duration: Double = 0
     private var isExporting = false
+    /// 会话代号：show() 递增，导出回调只认最新会话，
+    /// 防止旧导出完成后把重新打开的新会话一起关掉
+    private var exportGeneration = 0
 
     /// 右侧信息区的键值标签
     private var valueLabels: [String: NSTextField] = [:]
@@ -37,17 +40,23 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
 
         url = recording.url
         duration = recording.duration
+        // 挂载播放器：预览是该窗口的核心交互（拖进度定位起止点）。
+        // 漏了这一步的话窗口只会是黑屏 + 浮动控制条，用户只能盲填秒数
+        let player = AVPlayer(url: recording.url)
+        self.player = player
+        playerView?.player = player
         startField?.stringValue = Self.timeText(0)
         endField?.stringValue = Self.timeText(recording.duration)
         hintLabel?.stringValue = ""
         isExporting = false
+        exportGeneration += 1
         exportButton?.isEnabled = true
         exportButton?.title = "导出裁剪"
 
         window.centerOnActiveScreen()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        player?.play()
+        player.play()
     }
 
     // MARK: - 窗口
@@ -203,7 +212,9 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
         field.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         field.textColor = .labelColor
         field.drawsBackground = true
-        field.backgroundColor = NSColor.white.withAlphaComponent(0.12)
+        // 本窗口是标准 titled 窗口，右栏跟随系统外观：
+        // 白色半透明底在浅色模式下几乎隐形，必须用语义色让系统自动适配
+        field.backgroundColor = .controlBackgroundColor
         field.focusRingType = .none
         field.isBordered = false
         field.alignment = .left
@@ -257,12 +268,15 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
         let plan = CompositionEditor.Plan(
             sourceURL: url, keepSegments: keep, outputURL: output)
 
+        let generation = exportGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
                 let result = try await CompositionEditor.export(plan: plan)
+                guard generation == self.exportGeneration else { return }
                 await self.continueAfterExport(result: result)
             } catch {
+                guard generation == self.exportGeneration else { return }
                 await self.failExport(message: error.localizedDescription)
             }
         }
@@ -295,6 +309,11 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
     @objc private func cancelClicked() {
         player?.pause()
         window?.performClose(nil)
+    }
+
+    /// 点红色关闭按钮也要暂停（`cancelClicked` 只覆盖了取消按钮路径）
+    func windowWillClose(_ notification: Notification) {
+        player?.pause()
     }
 
     // MARK: - 工具

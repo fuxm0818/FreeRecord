@@ -66,7 +66,8 @@ final class RecordingCoordinator {
     /// 因缺屏幕录制权限而没启动成的录制，授权后自动续上
     private var pendingStart: (source: CaptureSource?, settings: CaptureSettings)?
     /// 启动门控进行中（采集已启动、尚未宣布 recording）：挡住重复点击开始
-    private var isPreparing = false
+    /// 采集源已启动、门控等待中（此时 state 仍为 idle，入口必须据此挡住重复触发）
+    private(set) var isPreparing = false
 
     /// App 变为活跃时调用：权限已就绪就自动开始之前未启动成的录制
     func retryPendingStartIfReady() async {
@@ -188,11 +189,7 @@ final class RecordingCoordinator {
                     self.systemAudioCapture = systemCapture
                 } catch {
                     systemCapture.stop()
-                    await screen?.stop()
-                    writer.cancel()
-                    self.writer = nil
-                    self.screen = nil
-                    self.currentSize = nil
+                    await teardownStartedSources(cancelWriter: writer)
                     delegate?.recordingFailed(message: "虚拟声卡（\(blackHole.name)）启动失败：\(error.localizedDescription)")
                     return
                 }
@@ -217,9 +214,7 @@ final class RecordingCoordinator {
                         try await stream.start(display: display)
                         self.systemAudioStream = stream
                     } catch {
-                        writer.cancel()
-                        self.writer = nil
-                        self.currentSize = nil
+                        await teardownStartedSources(cancelWriter: writer)
                         delegate?.recordingFailed(message: "系统声音启动失败：\(error.localizedDescription)")
                         return
                     }
@@ -237,11 +232,10 @@ final class RecordingCoordinator {
                     try deviceAudio.start(deviceName: nil)
                     self.mic = deviceAudio
                 } catch {
-                    await screen?.stop()
-                    writer.cancel()
-                    self.writer = nil
-                    self.screen = nil
-                    self.currentSize = nil
+                    deviceAudio.stop()
+                    // 此前已启动的系统声采集（黑声卡 / SCK 流）必须一并收掉，
+                    // 否则它会在后台继续空转，占用音频硬件与 CPU
+                    await teardownStartedSources(cancelWriter: writer)
                     delegate?.recordingFailed(message: "麦克风启动失败：\(error.localizedDescription)")
                     return
                 }
@@ -251,9 +245,11 @@ final class RecordingCoordinator {
             // 各源 start() 返回只是管线就绪，首帧回调是异步的（SCK 系统声可达数百毫秒），
             // 不等就宣布录制，用户立刻说话/播放的声音会落在音频轨起点之前——开头丢声。
             // 超时兜底 2.5 秒：系统完全静音或设备异常时照常放行，不卡死开录。
-            await AudioStartGate.wait(counters: counters, mic: hasMic, system: hasSystem)
+            // 门控等待期间样本已在写入（writer 以首个样本建时间轴），
+            // 计时起点回拨等待时长，界面计时才与文件时长对得上
+            let gateWaited = await AudioStartGate.wait(counters: counters, mic: hasMic, system: hasSystem)
 
-            startedAt = Date()
+            startedAt = Date().addingTimeInterval(-gateWaited)
             accumulatedPaused = 0
             pausedSince = nil
             state = .recording
@@ -261,12 +257,26 @@ final class RecordingCoordinator {
             startStallWatchdog()
             delegate?.recordingStateChanged()
         } catch {
-            createdWriter?.cancel()
-            self.writer = nil
-            self.screen = nil
-            self.currentSize = nil
+            await teardownStartedSources(cancelWriter: createdWriter)
             delegate?.recordingFailed(message: "启动录制失败：\(error.localizedDescription)")
         }
+    }
+
+    /// 统一收掉已启动的采集源与 writer。
+    /// 所有失败路径必须走这里：历史上麦克风失败分支漏停了系统声采集，
+    /// 导致一个采集会话在后台空转直到下一次成功开录。新增采集源时只需改这里。
+    private func teardownStartedSources(cancelWriter: RecordingWriter?) async {
+        await screen?.stop()
+        await systemAudioStream?.stop()
+        systemAudioCapture?.stop()
+        mic?.stop()
+        cancelWriter?.cancel()
+        self.screen = nil
+        self.systemAudioStream = nil
+        self.systemAudioCapture = nil
+        self.mic = nil
+        self.writer = nil
+        self.currentSize = nil
     }
 
     func stop() {
@@ -420,6 +430,7 @@ final class RecordingCoordinator {
         // 上报文件真实时长：墙钟 elapsed 只说明录了多久，说明不了文件里有多少
         do {
             let url = try await writer.finish()
+            Self.appendAlignmentLog(writer: writer, directory: saveDirectory)
             let real = await Self.movieDuration(url)
             reportSaved(url: url, writer: writer, size: size, duration: real ?? duration, askToSave: askToSave)
         } catch {
@@ -456,6 +467,20 @@ final class RecordingCoordinator {
               duration.isNumeric else { return nil }
         let seconds = duration.seconds
         return seconds.isFinite && seconds > 0 ? seconds : nil
+    }
+
+    /// 把音画对齐数据追加到输出目录的 音画对齐诊断.log（排查音画不同步的实锤数据）
+    private static func appendAlignmentLog(writer: RecordingWriter, directory: URL) {
+        guard let report = writer.alignmentReport() else { return }
+        let logURL = directory.appendingPathComponent("音画对齐诊断.log")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            handle.seekToEndOfFile()
+            handle.write(Data((report + "\n\n").utf8))
+            try? handle.close()
+        } else {
+            try? (report + "\n\n").write(to: logURL, atomically: true, encoding: .utf8)
+        }
     }
 
     private static func isPlayableMovie(_ url: URL) -> Bool {

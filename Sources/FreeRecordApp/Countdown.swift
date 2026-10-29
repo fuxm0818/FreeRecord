@@ -31,6 +31,9 @@ final class CountdownController: NSObject {
             window.ignoresMouseEvents = true
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             window.title = ScreenCapture.hiddenWindowTitle
+            // 倒计时数字全屏悬停数秒，必须两层保护都齐：系统级也不可见
+            // （否则会出现在别人的屏幕共享/截图里）
+            window.sharingType = .none
 
             let label = NSTextField(labelWithString: String(remaining))
             label.font = NSFont.systemFont(ofSize: 220, weight: .bold)

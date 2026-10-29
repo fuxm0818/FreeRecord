@@ -70,7 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
         hotkeys.onToggleRecord = { [weak self] in
             guard let self else { return }
-            if self.coordinator.state == .idle { self.openScreenRecording() } else { self.coordinator.stop() }
+            switch self.coordinator.state {
+            case .recording, .paused:
+                self.coordinator.stop()
+            case .idle:
+                // 门控等待期（采集已启动、state 仍是 idle）不能重入选区流程
+                guard !self.coordinator.isPreparing else { return }
+                self.openScreenRecording()
+            default:
+                break
+            }
         }
         hotkeys.onTogglePause = { [weak self] in self?.coordinator.togglePause() }
         hotkeys.setEnabled(settings.hotkeysEnabled)
@@ -315,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
     /// 屏幕录制只有一个入口：先进全屏选区层
     private func openScreenRecording() {
-        guard coordinator.state == .idle else { return }
+        guard coordinator.state == .idle, !coordinator.isPreparing else { return }
         guard !cameraWindow.isRecording else {
             alert("摄像头正在录制，请先停止摄像头录制。")
             return
@@ -323,6 +332,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         cameraWindow.hide()
         audioWindow.hide()
         home.hide()
+        // 预览/设置是普通窗口（没有「不入画」保护），开着开录会把
+        // 上一段成片/设置内容拍进新录制
+        previewPanel.hide()
+        settingsPanel.hide()
         regionSelector.show()
     }
 
@@ -386,10 +399,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         // 只写「仅音频」场景自己的配置，不再覆写录屏的声音选择
         settings.setAudio(audio, for: .audioOnly)
         let capture = CaptureSettings(fps: 30, targetHeight: 0, showsCursor: false, audio: audio, pixelScale: 1)
+        // 门控等待（权限预检 + 采集启动 + 等首帧）期间给「准备中」反馈，
+        // 重复点击会被 coordinator 的 isPreparing 静默吞掉，不能让按钮装死
+        audioWindow.setPreparing(true)
         Task { [weak self] in
             await self?.coordinator.startAudioOnly(settings: capture) { [weak self] level in
                 self?.audioWindow.updateLevel(level)
             }
+            self?.audioWindow.setPreparing(false)
         }
     }
 

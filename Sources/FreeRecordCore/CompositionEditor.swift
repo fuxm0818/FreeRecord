@@ -75,31 +75,6 @@ public enum CompositionEditor {
         }
     }
 
-    // MARK: - 构造计划
-
-    /// 去掉中间一段（其余全部保留）
-    public static func planRemoving(sourceURL: URL, outputURL: URL, range: ClosedRange<Double>) -> Plan {
-        let asset = AVURLAsset(url: sourceURL)
-        let total = asset.duration.seconds
-        let start = Swift.max(0, Swift.min(range.lowerBound, total))
-        let end = Swift.max(start, Swift.min(range.upperBound, total))
-        var segments: [Segment] = []
-        if start > 0.001 { segments.append(Segment(start: 0, end: start)) }
-        if end < total - 0.001 { segments.append(Segment(start: end, end: total)) }
-        return Plan(sourceURL: sourceURL, keepSegments: segments, outputURL: outputURL)
-    }
-
-    /// 只保留中间一段（掐头去尾）
-    public static func planKeepingOnly(sourceURL: URL, outputURL: URL, range: ClosedRange<Double>) -> Plan {
-        let asset = AVURLAsset(url: sourceURL)
-        let total = asset.duration.seconds
-        let start = Swift.max(0, Swift.min(range.lowerBound, total))
-        let end = Swift.max(start, Swift.min(range.upperBound, total))
-        return Plan(sourceURL: sourceURL,
-                    keepSegments: [Segment(start: start, end: end)],
-                    outputURL: outputURL)
-    }
-
     // MARK: - 核心：构建 composition
 
     /// 把 `keepSegments` 依次拼进一条新的 composition。
@@ -146,6 +121,9 @@ public enum CompositionEditor {
             guard let track = composition.addMutableTrack(
                 withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            // 音轨显式用 48kHz 时基：默认 600 的量化粒度 ≈1.67ms，
+            // 48kHz 插入时样本边界被取整，剪辑点可能出现微小截断/爆音
+            track.naturalTimeScale = 48000
             var cursor = CMTime.zero
             for segment in plan.keepSegments where segment.duration > 0.001 {
                 let range = CMTimeRange(
@@ -177,15 +155,32 @@ public enum CompositionEditor {
         let fm = FileManager.default
         try? fm.createDirectory(at: plan.outputURL.deletingLastPathComponent(),
                                 withIntermediateDirectories: true)
-        try? fm.removeItem(at: plan.outputURL)
+        // 同名文件可能是用户上一次的裁剪成果，不能静默删除——自动追加序号
+        var outputURL = plan.outputURL
+        if fm.fileExists(atPath: outputURL.path) {
+            let stem = outputURL.deletingPathExtension().lastPathComponent
+            let ext = outputURL.pathExtension
+            let directory = outputURL.deletingLastPathComponent()
+            var index = 2
+            var candidate = directory
+                .appendingPathComponent("\(stem)-\(index)")
+                .appendingPathExtension(ext)
+            while fm.fileExists(atPath: candidate.path) {
+                index += 1
+                candidate = directory
+                    .appendingPathComponent("\(stem)-\(index)")
+                    .appendingPathExtension(ext)
+            }
+            outputURL = candidate
+        }
 
         guard let session = AVAssetExportSession(
             asset: composition,
             presetName: AVAssetExportPresetPassthrough) else {
             throw EditorError.exportFailed("无法创建导出任务")
         }
-        session.outputURL = plan.outputURL
-        session.outputFileType = plan.outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
+        session.outputURL = outputURL
+        session.outputFileType = outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
         session.shouldOptimizeForNetworkUse = false
 
         let poller = Task.detached { [weak session] in
@@ -206,16 +201,20 @@ public enum CompositionEditor {
 
         switch session.status {
         case .completed:
-            let values = try? plan.outputURL.resourceValues(forKeys: [.fileSizeKey])
+            let values = try? outputURL.resourceValues(forKeys: [.fileSizeKey])
             let bytes = Double(values?.fileSize ?? 0)
-            return Result(url: plan.outputURL,
+            return Result(url: outputURL,
                           duration: plan.keptDuration,
                           fileSizeMB: bytes / 1_048_576)
         case .cancelled:
+            // 取消/失败都会留下写了一半的封装文件，不清掉会在目录里积累垃圾
+            // （同名自增序号机制不会覆盖它们，只会绕着走）
+            try? fm.removeItem(at: outputURL)
             throw EditorError.exportCancelled
         default:
             let message = CompositionEditor.describe(session.error)
                 ?? "导出未完成（状态 \(session.status.rawValue)）"
+            try? fm.removeItem(at: outputURL)
             throw EditorError.exportFailed(message)
         }
     }

@@ -10,24 +10,29 @@ import Foundation
 /// 超时后照常放行，降级为既有行为，不会卡死开录。
 public enum AudioStartGate {
     /// 轮询分轨计数，直到所有启用音源首帧到达或超时。
+    /// - Returns: 实际等待的秒数（等待期间样本已在写入，调用方须把
+    ///   计时起点回拨同样的量，文件时长才与界面计时一致）
     /// - Parameters:
     ///   - mic: 是否等待麦克风首帧
     ///   - system: 是否等待系统声首帧（SCK 流与 BlackHole 都计入 system 轨）
     ///   - timeout: 最长等待；0 表示不等待
+    @discardableResult
     public static func wait(
         counters: CaptureCounters,
         mic: Bool,
         system: Bool,
         timeout: TimeInterval = 2.5
-    ) async {
-        guard mic || system else { return }
-        let deadline = Date().addingTimeInterval(timeout)
+    ) async -> TimeInterval {
+        guard mic || system else { return 0 }
+        let began = Date()
+        let deadline = began.addingTimeInterval(timeout)
         while Date() < deadline {
             let s = counters.snapshot()
             let micReady = !mic || s.audioMicrophone > 0
             let systemReady = !system || s.audioSystem > 0
-            if micReady && systemReady { return }
+            if micReady && systemReady { break }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
+        return Date().timeIntervalSince(began)
     }
 }

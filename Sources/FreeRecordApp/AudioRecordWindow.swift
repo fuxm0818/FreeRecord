@@ -10,8 +10,8 @@ final class AudioRecordWindowController {
     var elapsedProvider: (() -> TimeInterval)?
 
     private var panel: NSPanel?
-    private var micSwitch: NSSwitch?
-    private var systemSwitch: NSSwitch?
+    private var micSwitch: StatefulSwitch?
+    private var systemSwitch: StatefulSwitch?
     private var timerLabel: NSTextField?
     private var meter: AudioLevelMeter?
     private var startButton: NSButton?
@@ -21,15 +21,18 @@ final class AudioRecordWindowController {
     private var level: Float = 0
     private var recording = false
     private var paused = false
+    /// 启动门控进行中（权限预检 + 采集启动 + 等首帧，最长约 2.5 秒）
+    private var preparing = false
 
     func show(settings: AppSettings) {
         if panel == nil {
             build(settings: settings)
         }
-        micSwitch?.state = settings.audio(for: .audioOnly).wantsMicrophone ? .on : .off
-        systemSwitch?.state = settings.audio(for: .audioOnly).wantsSystemAudio ? .on : .off
-        if micSwitch?.state == .off, systemSwitch?.state == .off {
-            micSwitch?.state = .on
+        let sceneAudio = settings.audio(for: .audioOnly)
+        micSwitch?.isOn = sceneAudio.wantsMicrophone
+        systemSwitch?.isOn = sceneAudio.wantsSystemAudio
+        if micSwitch?.isOn != true, systemSwitch?.isOn != true {
+            micSwitch?.isOn = true
         }
         updateUI()
         panel?.centerOnActiveScreen()
@@ -56,6 +59,13 @@ final class AudioRecordWindowController {
             level = 0
             meter?.level = 0
         }
+        updateUI()
+    }
+
+    /// 启动门控开始/结束：期间禁用按钮并给出「准备中」反馈，
+    /// 否则用户在等待首帧的几秒里重复点击会被 coordinator 静默吞掉
+    func setPreparing(_ value: Bool) {
+        preparing = value
         updateUI()
     }
 
@@ -110,14 +120,13 @@ final class AudioRecordWindowController {
         self.meter = meter
         container.addSubview(meter)
 
-        let micSwitch = NSSwitch()
-        micSwitch.controlSize = .mini
-        micSwitch.target = self
-        micSwitch.action = #selector(switchChanged)
-        let systemSwitch = NSSwitch()
-        systemSwitch.controlSize = .mini
-        systemSwitch.target = self
-        systemSwitch.action = #selector(switchChanged)
+        // 自绘开关：开/关轨道色固定（绿/暗），不随系统强调色变成「开合同色」
+        let micSwitch = StatefulSwitch()
+        micSwitch.accessibilityLabelText = "麦克风"
+        micSwitch.onToggle = { [weak self] _ in self?.switchChanged() }
+        let systemSwitch = StatefulSwitch()
+        systemSwitch.accessibilityLabelText = "系统声音"
+        systemSwitch.onToggle = { [weak self] _ in self?.switchChanged() }
         self.micSwitch = micSwitch
         self.systemSwitch = systemSwitch
 
@@ -174,8 +183,8 @@ final class AudioRecordWindowController {
     }
 
     private func selectedAudio() -> AudioSource {
-        let mic = micSwitch?.state == .on
-        let system = systemSwitch?.state == .on
+        let mic = micSwitch?.isOn == true
+        let system = systemSwitch?.isOn == true
         switch (mic, system) {
         case (true, true): return .microphoneAndSystem
         case (true, false): return .microphone
@@ -185,16 +194,16 @@ final class AudioRecordWindowController {
     }
 
     private func updateUI() {
-        micSwitch?.isEnabled = !recording
-        systemSwitch?.isEnabled = !recording && (AppSettings.shared.supportsSystemAudio || SystemAudioSupport.findBlackHole() != nil)
+        micSwitch?.isEnabled = !recording && !preparing
+        systemSwitch?.isEnabled = !recording && !preparing && (AppSettings.shared.supportsSystemAudio || SystemAudioSupport.findBlackHole() != nil)
         pauseButton?.isHidden = !recording
-        startButton?.title = recording ? "停止并保存" : "开始录制"
-        startButton?.isEnabled = recording || micSwitch?.state == .on || systemSwitch?.state == .on
-        startButton?.contentTintColor = recording ? .systemRed : .systemRed
+        startButton?.title = recording ? "停止并保存" : (preparing ? "准备中…" : "开始录制")
+        startButton?.isEnabled = recording || (!preparing && (micSwitch?.isOn == true || systemSwitch?.isOn == true))
+        startButton?.contentTintColor = .systemRed
         pauseButton?.title = paused ? "继续" : "暂停"
         hintLabel?.stringValue = recording
             ? (paused ? "已暂停" : "正在录制")
-            : ""
+            : (preparing ? "正在启动声音采集…" : "")
         timerLabel?.textColor = paused ? .systemYellow : .white
         updateTime()
     }

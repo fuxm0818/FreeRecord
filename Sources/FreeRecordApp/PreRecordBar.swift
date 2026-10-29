@@ -130,22 +130,24 @@ final class PreRecordBarController: NSObject {
         closeButton.toolTip = "取消"
         closeButton.setFrameSize(NSSize(width: 20, height: 20))
 
+        // 弹性占位：单独持有再设低抱合力。
+        // 不能用 first(where: 非NSControl) 查找——NSBox 不是 NSControl，
+        // 会误命中第一条分隔线，窗口拉宽时竖线被拉出空白段
+        let spacer = NSView()
         let stack = NSStackView(views: [
             widthField, timesLabel, heightField,
             makeSeparator(),
             resolutionPopup, fpsPopup,
             makeSeparator(),
             micButton, systemButton, mouseButton,
-            NSView(),
+            spacer,
             startButton, closeButton,
         ])
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.alignment = .centerY
         stack.translatesAutoresizingMaskIntoConstraints = false
-        if let spacer = stack.arrangedSubviews.first(where: { $0 is NSView && !( $0 is NSControl) && !( $0 is NSSwitch) }) {
-            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        }
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         container.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -258,10 +260,11 @@ final class PreRecordBarController: NSObject {
 
     private func applyToggleStyle(_ button: NSButton) {
         let on = button.state == .on
+        // 开/关必须一眼可辨：开 = 绿底白图标，关 = 暗底淡图标
         button.contentTintColor = on ? .white : NSColor.white.withAlphaComponent(0.35)
         button.layer?.backgroundColor = on
-            ? NSColor.white.withAlphaComponent(0.16).cgColor
-            : NSColor.clear.cgColor
+            ? NSColor.systemGreen.withAlphaComponent(0.85).cgColor
+            : NSColor.white.withAlphaComponent(0.10).cgColor
     }
 
     private func makeSeparator() -> NSView {

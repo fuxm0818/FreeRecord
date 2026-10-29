@@ -46,11 +46,16 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         renameHint?.stringValue = ""
         apply(recording: recording)
 
+        refreshMetadata(for: recording)
+
         window.centerOnActiveScreen()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         player.play()
+    }
 
+    /// 拉取真实媒体信息刷新右侧键值区（裁剪导出后宽度/时长等占位值需要覆盖）
+    private func refreshMetadata(for recording: SavedRecording) {
         Task { [weak self] in
             let details = await Self.metadata(for: recording)
             guard let self, self.url == recording.url else { return }
@@ -342,7 +347,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         alert.buttons.first?.hasDestructiveAction = true
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         player?.pause()
-        try? FileManager.default.removeItem(at: url)
+        // 进废纸篓而不是永久删除：误删可从 Finder 找回
+        try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
         onFileChanged?()
         window?.performClose(nil)
     }
@@ -369,6 +375,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             self.playerView?.player = self.player
             self.player?.play()
             self.apply(recording: trimmed)
+            self.refreshMetadata(for: trimmed)
             self.onFileChanged?()
         }
         trimPanel.show(recording: recording)
@@ -376,6 +383,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
 
     @objc private func closePanel() {
         window?.performClose(nil)
+    }
+
+    func hide() {
+        window?.orderOut(nil)
     }
 
     nonisolated func windowWillClose(_ notification: Notification) {

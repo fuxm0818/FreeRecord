@@ -40,6 +40,14 @@ public final class RecordingWriter {
     private var originPTS: CMTime?
     private var lastVideoPTS: CMTime = .invalid
     private var lastAudioPTS: [CMTime]
+    /// 各轨已写入内容的末端（PTS + 实际时长）：统一暂停恢复点用它计算
+    private var lastVideoEnd: CMTime = .invalid
+    private var lastAudioEnd: [CMTime]
+    /// 各轨首个成功写入样本的原始 PTS：音画对齐诊断用（与 origin 的关系能看出启动错位）
+    private var firstRawPTS: [CMTime?] = [nil, nil, nil] // 0=视频 1=麦克风 2=系统声
+    /// 暂停恢复的统一续接点：所有轨从同一输出时刻继续，暂停间隙等长，
+    /// 恢复后各轨相对关系与暂停前一致（各轨独立续接会每次暂停累积几十毫秒错位）
+    private var pendingResumePTS: CMTime = .invalid
     private var sessionStarted = false
     private var audioSamplesAppended = 0
     private var paused = false
@@ -109,6 +117,18 @@ public final class RecordingWriter {
         if newPaused {
             videoShiftDirty = true
             for track in 0..<2 { audioShiftDirty[track] = true }
+        } else {
+            // 恢复：取各轨已写内容末端的最大值作为统一续接点。
+            // 此刻 lastXXXEnd 已定格（暂停时样本全被丢弃），两条轨恢复后
+            // 都从这个输出时刻继续，暂停间隙等长、相对对齐不被破坏。
+            var candidates: [CMTime] = []
+            if lastVideoEnd.isValid { candidates.append(lastVideoEnd) }
+            for end in lastAudioEnd where end.isValid { candidates.append(end) }
+            if let common = candidates.max(by: { CMTimeCompare($0, $1) < 0 }) {
+                pendingResumePTS = common
+                videoShiftDirty = true
+                for track in 0..<2 { audioShiftDirty[track] = true }
+            }
         }
     }
 
@@ -217,6 +237,7 @@ public final class RecordingWriter {
         self.videoInput = video
         self.audioInputs = inputs
         self.lastAudioPTS = [.invalid, .invalid]
+        self.lastAudioEnd = [.invalid, .invalid]
     }
 
     public var lastVideoSeconds: Double? {
@@ -282,6 +303,13 @@ public final class RecordingWriter {
         guard let (retimed, pts) = prepare(sampleBuffer, shift: &videoShift, shiftDirty: &videoShiftDirty, previousPTS: lastVideoPTS) else { return .invalid }
         guard videoInput.append(retimed) else { return .invalid }
         lastVideoPTS = pts
+        let duration = CMSampleBufferGetDuration(sampleBuffer)
+        lastVideoEnd = duration.isValid && duration.seconds > 0
+            ? CMTimeAdd(pts, duration)
+            : CMTimeAdd(pts, frameDuration)
+        if firstRawPTS[0] == nil {
+            firstRawPTS[0] = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        }
         return .written
     }
 
@@ -306,6 +334,14 @@ public final class RecordingWriter {
         guard let (retimed, pts) = prepare(sampleBuffer, shift: &audioShift[index], shiftDirty: &audioShiftDirty[index], previousPTS: lastAudioPTS[index]) else { return .invalid }
         guard audioInput.append(retimed) else { return .invalid }
         lastAudioPTS[index] = pts
+        let duration = CMSampleBufferGetDuration(sampleBuffer)
+        lastAudioEnd[index] = duration.isValid && duration.seconds > 0
+            ? CMTimeAdd(pts, duration)
+            : CMTimeAdd(pts, CMTime(value: 1024, timescale: 48000))
+        let rawSlot = track == .microphone ? 1 : 2
+        if firstRawPTS[rawSlot] == nil {
+            firstRawPTS[rawSlot] = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        }
         audioSamplesAppended += 1
         return .written
     }
@@ -380,6 +416,45 @@ public final class RecordingWriter {
         return started
     }
 
+    /// 音画对齐诊断：各轨原始 PTS 的首/末与相对视频首帧的偏移。
+    /// 麦克风轨与视频轨来自不同时钟源（SCStream vs AVCaptureSession），
+    /// 这份报告是判断「固定偏移」还是「渐进漂移」的唯一实锤。
+    public func alignmentReport() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        guard sessionStarted, let origin = originPTS else { return nil }
+        guard let videoFirst = firstRawPTS[0], videoFirst.isValid else { return nil }
+        let videoLast = lastVideoPTS
+        guard videoLast.isValid else { return nil }
+
+        var lines: [String] = []
+        lines.append("时间：\(ISO8601DateFormatter().string(from: Date()))")
+        let reference = videoFirst.seconds
+        func offsetText(_ raw: CMTime?) -> String {
+            guard let raw, raw.isValid else { return "—" }
+            return String(format: "%+.3f", raw.seconds - reference)
+        }
+        lines.append(String(format: "视频轨：首 %@  末 %@（时长 %.2fs）",
+                            offsetText(videoFirst), offsetText(videoLast),
+                            videoLast.seconds - videoFirst.seconds))
+        let micNames = [(1, "麦克风轨"), (2, "系统声轨")]
+        for (slot, name) in micNames {
+            guard let first = firstRawPTS[slot], first.isValid else { continue }
+            let last = lastAudioPTS[slot == 1 ? 0 : 1]
+            guard last.isValid else { continue }
+            let firstOffset = first.seconds - reference
+            let lastOffset = last.seconds - reference
+            // 首偏移 = 启动错位（时钟域固定差 + 启动顺序）；
+            // 末偏移 − 首偏移 = 录制期间的相对漂移（时钟速率差 × 时长）
+            lines.append(String(format: "%@：首 %@  末 %@（时长 %.2fs）",
+                                name, offsetText(first), offsetText(last),
+                                last.seconds - first.seconds))
+            lines.append(String(format: "%@相对视频：启动错位 %+.3fs，漂移 %+.3fs",
+                                name, firstOffset, lastOffset - firstOffset))
+        }
+        lines.append(String(format: "origin（首个样本原始 PTS，相对视频首帧）：%+.3fs", origin.seconds - reference))
+        return lines.joined(separator: "\n")
+    }
+
     public func cancel() {
         lock.lock(); defer { lock.unlock() }
         finishing = true
@@ -407,7 +482,11 @@ public final class RecordingWriter {
         let firstRelative = CMTimeSubtract(pts, originForFirst)
         if shiftDirty {
             shiftDirty = false
-            if referencePTS.isValid {
+            if pendingResumePTS.isValid {
+                // 暂停恢复：统一续接点优先。各轨独立续接会让每次暂停
+                // 累积几十毫秒的相对错位（两轨末端天然相差一个样本周期）
+                shift = CMTimeSubtract(pendingResumePTS, firstRelative)
+            } else if referencePTS.isValid {
                 let duration = CMSampleBufferGetDuration(sampleBuffer)
                 let nextFree = duration.isValid && duration.seconds > 0
                     ? CMTimeAdd(referencePTS, duration)
