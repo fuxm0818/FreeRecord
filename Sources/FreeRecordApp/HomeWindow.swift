@@ -205,7 +205,8 @@ final class HomeWindowController: NSObject, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshPermission() }
+            guard let self else { return }
+            Task { @MainActor in self.refreshPermission() }
         }
     }
 

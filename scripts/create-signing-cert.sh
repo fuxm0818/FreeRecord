@@ -40,7 +40,13 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout "$TMP/key.pem" -out "$TMP/cert.pem" \
   -config "$TMP/openssl.cnf" 2>/dev/null
 
-openssl pkcs12 -export -name "$CERT_NAME" \
+# OpenSSL 3 默认用 AES-256-CBC + PBKDF2 导出 p12，macOS 的 Security.framework
+# 解不开（报 MAC verification failed）；改用 legacy 参数（3DES/SHA1）才能导入。
+P12_LEGACY=""
+if openssl version 2>/dev/null | grep -q "OpenSSL 3"; then
+  P12_LEGACY="-legacy"
+fi
+openssl pkcs12 -export -name "$CERT_NAME" $P12_LEGACY \
   -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
   -out "$TMP/identity.p12" -passout pass:freerec 2>/dev/null
 

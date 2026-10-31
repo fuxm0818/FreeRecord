@@ -51,7 +51,7 @@ macOS 上顺手录一段屏，常常卡在三件事：商业软件带水印或�
 
 ## 从源码构建
 
-前置：Xcode 16 及以上（需要 Swift 6 工具链来解析 `swift-tools-version: 6.0`）、命令行开发者工具。无第三方依赖，无需 `pod`/`npm install`。
+前置：Xcode 16（Swift 6）或任意 Swift 5.7+ 工具链均可，仅安装 Command Line Tools 也能构建（macOS 12.3+）。无第三方依赖，无需 `pod`/`npm install`。
 
 ```bash
 git clone https://github.com/fuxm0818/FreeRecord.git

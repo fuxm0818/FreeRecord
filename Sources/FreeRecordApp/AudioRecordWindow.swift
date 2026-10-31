@@ -211,8 +211,8 @@ final class AudioRecordWindowController {
     private func startTimer() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self else { return }
                 self.updateTime()
                 if !self.paused {
                     self.meter?.level = self.level

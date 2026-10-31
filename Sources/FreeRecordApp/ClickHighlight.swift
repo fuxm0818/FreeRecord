@@ -1,4 +1,5 @@
 import AppKit
+import FreeRecordCore
 import Quartz
 
 @MainActor
@@ -17,8 +18,9 @@ final class ClickHighlightController: NSObject {
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
             let point = NSEvent.mouseLocation
             let down = event.type == .leftMouseDown
+            guard let self else { return }
             Task { @MainActor in
-                self?.showHighlight(at: point, down: down)
+                self.showHighlight(at: point, down: down)
             }
         }
         showOverlayIfNeeded()
@@ -65,6 +67,7 @@ final class ClickHighlightController: NSObject {
             defer: false
         )
         window.level = .floating + 1
+        window.title = ScreenCapture.recordedWindowTitle
         window.isOpaque = false
         window.backgroundColor = .clear
         window.ignoresMouseEvents = true
@@ -107,7 +110,8 @@ final class HighlightOverlayView: NSView {
     private func startTimer() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.animate() }
+            guard let self else { return }
+            Task { @MainActor in self.animate() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

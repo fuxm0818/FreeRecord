@@ -2,6 +2,7 @@
 .build/
 .build-x86/
 dist/
+dist-local/
 *.dmg
 *.zip
 

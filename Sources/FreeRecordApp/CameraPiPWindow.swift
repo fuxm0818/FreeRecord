@@ -508,7 +508,8 @@ final class CameraPiPController: NSObject, NSWindowDelegate {
     private func scheduleSnapAfterDrag() {
         snapWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor in self?.snapIntoCaptureRect() }
+            guard let self else { return }
+            Task { @MainActor in self.snapIntoCaptureRect() }
         }
         snapWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)

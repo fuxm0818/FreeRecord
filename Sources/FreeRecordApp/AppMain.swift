@@ -60,7 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in await self?.coordinator.retryPendingStartIfReady() }
+            guard let self else { return }
+            Task { @MainActor in await self.coordinator.retryPendingStartIfReady() }
         }
 
         controlBar.onStop = { [weak self] in self?.coordinator.stop() }
@@ -467,7 +468,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private func startWithCountdown(source: CaptureSource, settings captureSettings: CaptureSettings, camera: CameraOverlaySource?) {
         if settings.countdownEnabled {
             countdown.start(seconds: 3) { [weak self] in
-                Task { await self?.coordinator.start(source: source, settings: captureSettings, cameraOverlay: camera) }
+                guard let self else { return }
+                Task { await self.coordinator.start(source: source, settings: captureSettings, cameraOverlay: camera) }
             }
         } else {
             Task { await coordinator.start(source: source, settings: captureSettings, cameraOverlay: camera) }
@@ -764,7 +766,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         rangeFollowTimer = nil
         guard let windowID = rangeWindowID else { return }
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.followRecordingWindow(windowID) }
+            guard let self else { return }
+            Task { @MainActor in self.followRecordingWindow(windowID) }
         }
         RunLoop.main.add(timer, forMode: .common)
         rangeFollowTimer = timer
@@ -856,11 +859,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                 audioWindow.setRecording(false, paused: false)
             }
         }
-        home.viewModel.recordingState = switch coordinator.state {
-        case .idle: "idle"
-        case .recording: "recording"
-        case .paused: "paused"
-        case .finishing: "finishing"
+        switch coordinator.state {
+        case .idle: home.viewModel.recordingState = "idle"
+        case .recording: home.viewModel.recordingState = "recording"
+        case .paused: home.viewModel.recordingState = "paused"
+        case .finishing: home.viewModel.recordingState = "finishing"
         }
         rebuildMenu()
     }
@@ -911,8 +914,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private func startStatusTimer() {
         statusTimer?.invalidate()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                self?.updateStatusButton()
+                self.updateStatusButton()
             }
         }
         RunLoop.main.add(timer, forMode: .common)

@@ -103,22 +103,37 @@ enum SystemAudioSupport {
         let alreadyExisted: Bool
     }
 
+    private static let multiOutputUID = "com.fuxiangming.freerec.multioutput.v2"
+    /// 1.0.4 及更早版本用扬声器当主设备，macOS 12 上黑声卡收不到声音
+    private static let legacyMultiOutputUID = "com.fuxiangming.freerec.multioutput"
+
     /// 创建"扬声器 + BlackHole"多输出聚合设备：既出声又能被录制。
+    ///
+    /// 必须让 BlackHole 当主设备（时钟源）：在 macOS 12 上反向配置时扬声器有声音，
+    /// 但 BlackHole 子设备一直收到静音。扬声器作为副设备并开启漂移补偿跟随其时钟。
     static func createMultiOutputAggregate() throws -> AggregateResult {
         guard let blackHole = findBlackHole() else { throw SystemAudioSupportError.blackHoleNotInstalled }
-        guard let output = defaultOutputDevice() else { throw SystemAudioSupportError.noOutputDevice }
+        if let existing = deviceID(forUID: multiOutputUID) {
+            return AggregateResult(deviceID: existing, alreadyExisted: true)
+        }
+        if let legacy = deviceID(forUID: legacyMultiOutputUID) {
+            AudioHardwareDestroyAggregateDevice(legacy)
+        }
+        guard let output = defaultOutputDevice(), output.uid != multiOutputUID else {
+            throw SystemAudioSupportError.noOutputDevice
+        }
 
-        let existing = findExistingAggregate(composedOf: [output.uid, blackHole.uid])
+        let existing = findExistingAggregate(composedOf: [blackHole.uid, output.uid])
         if let existing { return AggregateResult(deviceID: existing, alreadyExisted: true) }
 
         let composition: [String: Any] = [
             kAudioAggregateDeviceNameKey: "自由录屏多输出",
-            kAudioAggregateDeviceUIDKey: "com.fuxiangming.freerec.multioutput",
+            kAudioAggregateDeviceUIDKey: multiOutputUID,
             kAudioAggregateDeviceIsPrivateKey: false,
-            kAudioAggregateDeviceMainSubDeviceKey: output.uid,
+            kAudioAggregateDeviceMainSubDeviceKey: blackHole.uid,
             kAudioAggregateDeviceSubDeviceListKey: [
-                [kAudioSubDeviceUIDKey: output.uid, kAudioSubDeviceDriftCompensationKey: 0],
-                [kAudioSubDeviceUIDKey: blackHole.uid, kAudioSubDeviceDriftCompensationKey: 1],
+                [kAudioSubDeviceUIDKey: blackHole.uid],
+                [kAudioSubDeviceUIDKey: output.uid, kAudioSubDeviceDriftCompensationKey: 1],
             ],
         ]
         var aggregateID = AudioObjectID(0)
@@ -127,6 +142,30 @@ enum SystemAudioSupport {
             throw SystemAudioSupportError.createFailed(status)
         }
         return AggregateResult(deviceID: aggregateID, alreadyExisted: false)
+    }
+
+    private static func deviceID(forUID target: String) -> AudioObjectID? {
+        for deviceID in allDeviceIDs() where deviceUID(deviceID) == target {
+            return deviceID
+        }
+        return nil
+    }
+
+    private static func allDeviceIDs() -> [AudioObjectID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else {
+            return []
+        }
+        var deviceIDs = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceIDs) == noErr else {
+            return []
+        }
+        return deviceIDs
     }
 
     static func setDefaultOutput(to deviceID: AudioObjectID) -> Bool {
@@ -188,8 +227,14 @@ enum SystemAudioSupport {
         let status = withUnsafeMutablePointer(to: &list) { pointer in
             AudioObjectGetPropertyData(deviceID, &listAddress, 0, nil, &size, pointer)
         }
-        guard status == noErr, let array = list as? [[String: Any]] else { return nil }
-        let uids = array.compactMap { $0[kAudioSubDeviceUIDKey] as? String }
+        // 系统返回的是 CFString UID 数组；创建时用的字典数组只出现在写入路径
+        guard status == noErr, let array = list as? [Any] else { return nil }
+        let uids: [String] = array.compactMap { item in
+            if let uid = item as? String { return uid }
+            if let dict = item as? [String: Any] { return dict[kAudioSubDeviceUIDKey] as? String }
+            return nil
+        }
+        guard !uids.isEmpty else { return nil }
         return AggregateComposition(subDeviceUIDs: uids)
     }
 }

@@ -171,7 +171,8 @@ final class RecordingCoordinator {
             if let source {
                 let capture = ScreenCapture(writer: writer, counters: counters, systemAudio: hasSystem, cameraOverlay: cameraOverlay)
                 capture.onError = { [weak self] message in
-                    Task { @MainActor in self?.captureInterrupted(message: message) }
+                    guard let self else { return }
+                    Task { @MainActor in self.captureInterrupted(message: message) }
                 }
                 try await capture.start(source: source, settings: settings)
                 screen = capture
@@ -214,7 +215,8 @@ final class RecordingCoordinator {
                             }
                         }
                         stream.onError = { [weak self] message in
-                            Task { @MainActor in self?.captureInterrupted(message: message) }
+                            guard let self else { return }
+                            Task { @MainActor in self.captureInterrupted(message: message) }
                         }
                         try await stream.start(display: display)
                         self.systemAudioStream = stream

@@ -87,27 +87,36 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         return (width, height)
     }
 
-    /// 排除本 App 的 UI 窗口（控制条/倒计时/选区框），鼠标高亮窗口不带隐藏标记、保留在画面里。
-    private static func ownHiddenWindows(display: SCDisplay) async -> [SCWindow] {
+    /// 排除本 App 的所有屏幕窗口（控制条/倒计时/选区框/菜单栏图标），
+    /// 只有带 `recordedWindowTitle` 的窗口（点击高亮效果）保留在画面里。
+    ///
+    /// 这里刻意在列表为空时也不回退到 `excludingWindows: []`：
+    /// macOS 12.7.6 上空排除列表会让整屏采集一帧都收不到（startCapture 成功但 0 帧），
+    /// 只要排除里有一个在屏窗口就正常。本 App 运行时菜单栏图标窗口一定在屏，
+    /// 因此正常使用中列表不会为空。
+    private static func ownExcludedWindows(display: SCDisplay) async -> [SCWindow] {
         let ourBundle = Bundle.main.bundleIdentifier ?? ""
         guard !ourBundle.isEmpty else { return [] }
         guard let content = try? await loadShareableContent() else { return [] }
         guard content.displays.contains(where: { $0.displayID == display.displayID }) else { return [] }
         return content.windows.filter { window in
-            guard window.isOnScreen, window.owningApplication?.bundleIdentifier == ourBundle else { return false }
-            return window.title == hiddenWindowTitle || window.windowLayer >= 1000
+            window.isOnScreen
+                && window.owningApplication?.bundleIdentifier == ourBundle
+                && window.title != recordedWindowTitle
         }
     }
 
     public static let hiddenWindowTitle = "\u{200B}freerec-ui-hidden\u{200B}"
+    /// 要被录进画面的自家窗口（点击高亮层）用这个标题，采集时不排除。
+    public static let recordedWindowTitle = "\u{200B}freerec-recorded\u{200B}"
 
     public func start(source: CaptureSource, settings: CaptureSettings) async throws {
         let filter: SCContentFilter
         switch source {
         case .display(let display):
-            filter = SCContentFilter(display: display, excludingWindows: await Self.ownHiddenWindows(display: display))
-        case .region(let display, let rect):
-            filter = SCContentFilter(display: display, excludingWindows: await Self.ownHiddenWindows(display: display))
+            filter = SCContentFilter(display: display, excludingWindows: await Self.ownExcludedWindows(display: display))
+        case .region(let display, _):
+            filter = SCContentFilter(display: display, excludingWindows: await Self.ownExcludedWindows(display: display))
         case .window(let window):
             filter = SCContentFilter(desktopIndependentWindow: window)
         }

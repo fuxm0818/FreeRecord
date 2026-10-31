@@ -250,7 +250,8 @@ final class ControlBarController: NSObject {
         timer?.invalidate()
         updateLabel()
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateLabel() }
+            guard let self else { return }
+            Task { @MainActor in self.updateLabel() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

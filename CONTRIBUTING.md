@@ -1,15 +1,15 @@
 # 贡献指南
 
-先说结论：**这个项目没有第三方依赖，不需要 Xcode 工程文件，`swift build` 就能跑起来。** 唯一的硬性前置是 Xcode 16+（`Package.swift` 用了 `swift-tools-version: 6.0`）。
+先说结论：**这个项目没有第三方依赖，不需要 Xcode 工程文件，`swift build` 就能跑起来。** 需要 Swift 5.7+（Xcode 14+ 或单独安装的 Command Line Tools 均可，macOS 12.3+）。
 
 ## 环境
 
 ```bash
-xcode-select -p                  # 应指向 Xcode，而不是 CommandLineTools 单独安装
-swift --version                  # 需要 Swift 6.x
+xcode-select -p                  # Xcode 或 CommandLineTools 均可
+swift --version                  # 需要 Swift 5.7+（Xcode 16 / Swift 6 也可）
 ```
 
-如果只有 Command Line Tools，`swift build` 会因缺少 macOS SDK 里的 ScreenCaptureKit / CoreAudio 头文件而失败——装上完整 Xcode 即可，本项目不做兼容。
+只有 Command Line Tools 也能构建：`Package.swift` 使用 `swift-tools-version: 5.7`，所需 SDK（ScreenCaptureKit / CoreAudio / AVFoundation）随 macOS 12.3+ 的 CLT 一起提供。macOS 14/15 才有的 API 已按编译器版本做条件编译，旧 SDK 会退回等价实现。
 
 ## 本地开发循环
 
@@ -28,7 +28,7 @@ open dist/FreeRecord.app           # 运行（推荐：LSUIElement 菜单栏 App
 
 ## 代码约定
 
-- Swift 5 语言模式（`swiftSettings: [.swiftLanguageMode(.v5)]`，三个 target 都设了），别在 PR 里顺手升到 Swift 6 严格并发。
+- Swift 5 语言模式（`swift-tools-version: 5.7` 在 Swift 6 下同样默认 Swift 5 模式），别在 PR 里顺手升到 Swift 6 严格并发。
 - UI 相关类型标 `@MainActor`；内核里的共享状态用 `NSLock` 保护，不要在锁里调用 async 上下文（编译器会警告，警告要清零）。
 - 界面文案、错误提示、代码注释统一中文；标识符、日志 tag 用英文。
 - 不引入第三方库。这个项目的卖点之一就是"零依赖、单包 6900 行能读懂"。

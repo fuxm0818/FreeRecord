@@ -90,15 +90,20 @@ enum ResizeZone: CaseIterable {
 
     /// 该热区对应的系统缩放光标（macOS 15 起有八向对角光标，更早系统退回轴向光标）
     var cursor: NSCursor {
+        // NSCursor.__frameResize 来自 macOS 15 SDK；旧 SDK（Swift 5.x / Xcode 15 及以下）
+        // 下走下方的轴向光标分支，运行时行为与 macOS 15 之前的系统一致。
+        #if compiler(>=6.0)
         if #available(macOS 15.0, *) {
             return NSCursor.__frameResize(from: frameResizePosition, in: .all)
         }
+        #endif
         switch self {
         case .top, .bottom: return .resizeUpDown
         case .left, .right, .topLeft, .topRight, .bottomLeft, .bottomRight: return .resizeLeftRight
         }
     }
 
+    #if compiler(>=6.0)
     @available(macOS 15.0, *)
     private var frameResizePosition: NSCursor.FrameResizePosition {
         switch self {
@@ -112,4 +117,5 @@ enum ResizeZone: CaseIterable {
         case .bottomRight: return .bottomRight
         }
     }
+    #endif
 }

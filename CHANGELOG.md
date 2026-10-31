@@ -2,6 +2,18 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [1.0.5] - 2026-10-31
+
+### 修复
+
+- **只有 Command Line Tools 的 macOS 12 环境无法构建**：`Package.swift` 的 `swift-tools-version` 从 6.0 降到 5.7，并去掉仅 Swift 6 支持的 `swiftLanguageMode(.v5)`（tools-version 5.7 在 Xcode 16 / Swift 6 下同样默认 Swift 5 语言模式，CI 行为不变）。Swift 5.7+（Xcode 14+ 或 Command Line Tools）现在都能直接 `swift build`，Swift 6 仍可正常构建与发布
+  - macOS 14/15 SDK 才有的符号改为按编译器版本条件编译：`AVCaptureDevice.DeviceType.continuityCamera` / `.external` 在旧 SDK 下退回 `.externalUnknown`；`NSCursor.__frameResize` 在旧 SDK 下退回轴向缩放光标（与 macOS 15 之前的运行时表现一致）
+  - 修正 Swift 5.8 及更严格并发检查下的若干 `Task` 捕获错误（`reference to captured var 'self' in concurrently-executing code`），运行时行为不变
+- **`create-signing-cert.sh` 在 OpenSSL 3 下无法导入证书**：Homebrew 安装的 OpenSSL 3 默认用 AES-256-CBC 导出 p12，macOS 钥匙串报 `MAC verification failed`。脚本现在检测到 OpenSSL 3 时改用 `-legacy`（3DES/SHA1），证书可正常导入并用于稳定签名
+- **macOS 12 上整屏/区域录制一帧都收不到**：12.7.6 的 ScreenCaptureKit 在 `excludingWindows` 为空时 `startCapture` 成功但不出帧（排除任意一个在屏窗口即恢复）。现在把本 App 所有在屏窗口（含菜单栏图标窗口）都加入排除列表，只保留带「需要入画」标记的点击高亮层；列表始终非空，UI 也不会被录进画面
+- **「创建多输出设备（边录边听）」在 macOS 12 上录不到系统声**：BlackHole 必须当聚合设备的主设备（时钟源），扬声器作为副设备开启漂移补偿跟随；反向配置时扬声器有声但 BlackHole 子设备一直收到静音
+- **重复点击「创建多输出设备」报错 `1852797029`**：系统返回的子设备列表是 CFString UID 数组，旧代码按字典解析导致查不到已存在的设备，再用同一 UID 创建时失败。现在兼容两种格式，并清理旧版 UID 的错误聚合设备
+
 ## [1.0.4] - 2026-10-29
 
 ### 修复

@@ -281,7 +281,8 @@ final class CameraRecordWindowController: NSObject {
     private func startTimer() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateTime() }
+            guard let self else { return }
+            Task { @MainActor in self.updateTime() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

@@ -93,7 +93,8 @@ final class CountdownController: NSObject {
     private func startTimer() {
         updateLabels(fade: false)
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            guard let self else { return }
+            Task { @MainActor in self.tick() }
         }
     }
 

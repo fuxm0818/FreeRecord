@@ -100,12 +100,18 @@ public final class CameraPiPCapture: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     public static func availableDevices() -> [AVCaptureDevice] {
         var types: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera]
+        // macOS 14 SDK 才有的枚举值：用编译器版本区分（Swift 6 == Xcode 16+）。
+        // 旧 SDK 下退回 externalUnknown，运行时行为一致。
+        #if compiler(>=6.0)
         if #available(macOS 14.0, *) {
             types.append(.continuityCamera)
             types.append(.external)
         } else {
             types.append(.externalUnknown)
         }
+        #else
+        types.append(.externalUnknown)
+        #endif
         return AVCaptureDevice.DiscoverySession(
             deviceTypes: types,
             mediaType: .video,

@@ -46,6 +46,6 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 
 ## 关键约定
 
-- 语言模式 Swift 5（`Package.swift` 里显式设置），并发标注用 `@MainActor`，跨线程状态用 `NSLock` 保护。
+- 语言模式 Swift 5（`swift-tools-version: 5.7` 默认），并发标注用 `@MainActor`，跨线程状态用 `NSLock` 保护。
 - 面向用户的文案与代码注释一律中文。
 - 不引入第三方依赖；系统框架优先。
