@@ -25,6 +25,18 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private let frameLock = NSLock()
     private var lastPixelBuffer: CVPixelBuffer?
     private static let imageContext = CIContext(options: nil)
+    /// macOS 12 的窗口/区域流只在内容变化时出帧，静止画面会得到几帧就结束的短片。
+    /// 画面停了超过 `pumpGap` 就用上一帧补一帧；显示流本身连续，不会触发。
+    private var pumpTimer: DispatchSourceTimer?
+    private var lastRawSampleBuffer: CMSampleBuffer?
+    private var pumpDuration = CMTime(value: 1, timescale: 30)
+    private static let pumpGap = CMTime(seconds: 0.5, preferredTimescale: 600)
+    /// 真实帧 PTS 与主机时钟的固定差：SCK 用哪个时钟域都不影响补帧
+    private var pumpPTSOffset = CMTime.invalid
+    /// 已写入的最后一个样本 PTS（补帧用，只在 queue 上访问）
+    private var lastEncodedPTS = CMTime.invalid
+    /// 最后一个样本进入 writer 的主机时刻：用来看画面停了多久
+    private var lastEncodedHostTime = CMTime.invalid
 
     public var onError: ((String) -> Void)?
 
@@ -157,9 +169,18 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             }
         }
         self.stream = stream
+        startFramePump(fps: settings.fps)
     }
 
     public func stop() async {
+        // 定时器状态全部在 queue 上，取消也回 queue 做，避免与 didOutput 抢着改。
+        // 顺手补一帧收尾：画面若是静止的，最后一帧可能停在这么久之前，轨道会短一截。
+        queue.sync { [weak self] in
+            guard let self else { return }
+            self.pumpTimer?.cancel()
+            self.pumpTimer = nil
+            self.appendPumpedFrameIfNeeded()
+        }
         guard let stream else { return }
         self.stream = nil
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -176,11 +197,21 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             guard Self.isCompleteFrame(sampleBuffer) else { return }
             let output = compositor?.composite(sampleBuffer) ?? sampleBuffer
             counters.frameCaptured()
+            let now = CMClockGetTime(CMClockGetHostTimeClock())
+            let rawPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            if now.isValid, rawPTS.isValid {
+                let offset = CMTimeSubtract(now, rawPTS)
+                if offset.isValid { pumpPTSOffset = offset }
+            }
             frameLock.lock()
             lastPixelBuffer = CMSampleBufferGetImageBuffer(output)
             frameLock.unlock()
+            lastRawSampleBuffer = sampleBuffer
             switch writer.appendVideo(output) {
-            case .written: counters.frameWritten()
+            case .written:
+                counters.frameWritten()
+                if rawPTS.isValid { lastEncodedPTS = rawPTS }
+                if now.isValid { lastEncodedHostTime = now }
             case .notReady: counters.frameDroppedBusy()
             case .invalid: counters.frameDroppedInvalid()
             case .paused: break
@@ -195,6 +226,84 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     public func stream(_ stream: SCStream, didStopWithError error: Error) {
         onError?("采集中断：\(error.localizedDescription)")
+    }
+
+    /// 定时器整个生命周期都在采集 queue 上：启动、补帧、取消互不抢状态
+    private func startFramePump(fps: Int) {
+        queue.async { [weak self] in
+            guard let self, self.pumpTimer == nil else { return }
+            self.pumpDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, fps)))
+            let interval = max(1, 1_000_000_000 / max(1, fps))
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            timer.schedule(
+                deadline: .now() + .nanoseconds(interval),
+                repeating: .nanoseconds(interval),
+                leeway: .milliseconds(2)
+            )
+            timer.setEventHandler { [weak self] in self?.pumpFrameIfNeeded() }
+            self.pumpTimer = timer
+            timer.resume()
+        }
+    }
+
+    private func pumpFrameIfNeeded() {
+        guard let raw = lastRawSampleBuffer, pumpPTSOffset.isValid,
+              !writer.isPaused, lastEncodedHostTime.isValid else { return }
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
+        guard now.isValid else { return }
+        // 画面一直在变就什么都不用做；静止超过 pumpGap 才补一帧，避免把文件撑大
+        let silent = CMTimeSubtract(now, lastEncodedHostTime)
+        guard silent.isValid, CMTimeCompare(silent, Self.pumpGap) >= 0 else { return }
+        appendPumpedFrame(from: raw, at: now)
+    }
+
+    private func appendPumpedFrameIfNeeded() {
+        guard let raw = lastRawSampleBuffer, pumpPTSOffset.isValid, !writer.isPaused else { return }
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
+        guard now.isValid else { return }
+        appendPumpedFrame(from: raw, at: now)
+    }
+
+    /// 时间戳落在真实帧的同一时钟域上；故意比真实时间晚一帧，
+    /// 让刚到的真实帧永远排在新补帧之后，避免写入器把整条轨往回重定时。
+    private func appendPumpedFrame(from sampleBuffer: CMSampleBuffer, at now: CMTime) {
+        let pts = CMTimeSubtract(CMTimeSubtract(now, pumpPTSOffset), pumpDuration)
+        guard pts.isValid,
+              !lastEncodedPTS.isValid || CMTimeCompare(pts, lastEncodedPTS) > 0,
+              let frame = makePumpedFrame(from: sampleBuffer, pts: pts) else { return }
+        switch writer.appendVideo(frame) {
+        case .written:
+            counters.frameWritten()
+            lastEncodedPTS = pts
+            lastEncodedHostTime = now
+        case .notReady, .invalid, .paused:
+            break
+        }
+    }
+
+    private func makePumpedFrame(from sampleBuffer: CMSampleBuffer, pts: CMTime) -> CMSampleBuffer? {
+        let image = compositor?.composite(sampleBuffer) ?? sampleBuffer
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(image) else { return nil }
+        var format: CMVideoFormatDescription?
+        guard CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &format
+        ) == noErr, let format else { return nil }
+        var timing = CMSampleTimingInfo(
+            duration: pumpDuration,
+            presentationTimeStamp: pts,
+            decodeTimeStamp: pts
+        )
+        var output: CMSampleBuffer?
+        guard CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescription: format,
+            sampleTiming: &timing,
+            sampleBufferOut: &output
+        ) == noErr else { return nil }
+        return output
     }
 
     private static func isCompleteFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {

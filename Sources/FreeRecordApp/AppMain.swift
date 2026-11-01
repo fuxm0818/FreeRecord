@@ -29,14 +29,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private let cameraWindow = CameraRecordWindowController()
     private let cameraPip = CameraPiPController()
 
-    /// 已选好、等待在预录制工具栏里确认的目标
+    /// 已选好、等待在预录制工具栏里确认的目标。
+    /// 不含 SCDisplay：选完就立刻出绿框和工具栏，显示器信息异步补（SCK 查询卡住也不能让 UI 消失）
     private enum PendingTarget {
-        case screen(display: SCDisplay, screen: NSScreen)
+        case screen(screen: NSScreen)
         case window(SCWindow)
         /// rect 统一用屏幕全局坐标（NS 系，主屏左下原点），开录时才换算到显示器本地坐标
-        case region(display: SCDisplay, screen: NSScreen, rect: CGRect)
+        case region(screen: NSScreen, rect: CGRect)
     }
     private var pendingTarget: PendingTarget?
+    private var pendingDisplay: SCDisplay?
+    private var pendingDisplayRequest = 0
     /// 本次录制范围的屏幕坐标（NS 系），用于把录制条摆到右下角
     private var recordingAnchor: NSRect?
     /// 录制中的范围指示框钉在哪块屏、要不要跟随某个窗口
@@ -117,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             self.preRecordBar.hide()
             self.regionFrame.hide()
             self.pendingTarget = nil
+            self.pendingDisplay = nil
+            self.pendingDisplayRequest += 1
             self.hideCameraPreview()
             self.rebuildMenu()
         }
@@ -500,11 +505,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     /// 本次录制范围（屏幕坐标，NS 系），画中画位置按它归一化
     private func captureRect(for target: PendingTarget) -> NSRect {
         switch target {
-        case .screen(_, let screen):
+        case .screen(let screen):
             return screen.frame
         case .window(let window):
             return Self.nsRect(fromCG: window.frame)
-        case .region(_, _, let rect):
+        case .region(_, let rect):
             return rect
         }
     }
@@ -591,54 +596,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     }
 
     private func prepareScreenTarget(screen: NSScreen) {
-        Task {
-            do {
-                let content = try await ScreenCapture.loadShareableContent()
-                guard let displayID = screen.displayID,
-                      let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                    alert("没有找到对应的显示器。")
-                    return
-                }
-                pendingTarget = .screen(display: display, screen: screen)
-                let scale = screen.backingScaleFactor
-                let size = NSSize(width: Double(display.width) * scale, height: Double(display.height) * scale)
-                preRecordBar.show(target: .screen(screen), settings: settings, pixelSize: size, pixelScale: scale)
-                prepareCameraIfNeeded()
-            } catch {
-                alert("获取屏幕信息失败：\(error.localizedDescription)")
-            }
-        }
+        pendingTarget = .screen(screen: screen)
+        pendingDisplay = nil
+        let scale = screen.backingScaleFactor
+        let size = NSSize(width: screen.frame.width * scale, height: screen.frame.height * scale)
+        preRecordBar.show(target: .screen(screen), settings: settings, pixelSize: size, pixelScale: scale)
+        prepareCameraIfNeeded()
+        resolvePendingDisplay(for: screen)
     }
 
     private func prepareRegionTarget(globalRect: CGRect, screen: NSScreen) {
-        Task {
-            do {
-                let content = try await ScreenCapture.loadShareableContent()
-                guard let displayID = screen.displayID,
-                      let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                    alert("没有找到对应的显示器。")
-                    return
+        pendingTarget = .region(screen: screen, rect: globalRect)
+        pendingDisplay = nil
+        regionFrame.show(screen: screen, rect: globalRect, editable: true)
+        let scale = screen.backingScaleFactor
+        preRecordBar.show(
+            target: .region(screen, globalRect),
+            settings: settings,
+            pixelSize: NSSize(width: globalRect.width * scale, height: globalRect.height * scale),
+            pixelScale: scale
+        )
+        prepareCameraIfNeeded()
+        resolvePendingDisplay(for: screen)
+    }
+
+    /// 后台补查 SCDisplay。选区和工具栏不依赖它，查询慢/失败也不会挡住 UI
+    private func resolvePendingDisplay(for screen: NSScreen) {
+        pendingDisplayRequest += 1
+        let request = pendingDisplayRequest
+        Task { [weak self] in
+            guard let self else { return }
+            guard let display = await Self.display(for: screen) else { return }
+            guard self.pendingDisplayRequest == request else { return }
+            self.pendingDisplay = display
+        }
+    }
+
+    /// 一次性 resume 守卫：SCK 在个别机器上会一直不回回调，不能无限等
+    private final class OneShotResume: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+
+        func run(_ body: () -> Void) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if done { return false }
+            done = true
+            body()
+            return true
+        }
+    }
+
+    private static func display(for screen: NSScreen, timeout: Double = 6) async -> SCDisplay? {
+        guard let displayID = screen.displayID else {
+            return nil
+        }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<SCDisplay?, Never>) in
+            let once = OneShotResume()
+            Task {
+                let display: SCDisplay?
+                do {
+                    let content = try await ScreenCapture.loadShareableContent()
+                    display = content.displays.first { $0.displayID == displayID }
+                } catch {
+                    display = nil
                 }
-                pendingTarget = .region(display: display, screen: screen, rect: globalRect)
-                regionFrame.show(screen: screen, rect: globalRect, editable: true)
-                let scale = screen.backingScaleFactor
-                preRecordBar.show(
-                    target: .region(screen, globalRect),
-                    settings: settings,
-                    pixelSize: NSSize(width: globalRect.width * scale, height: globalRect.height * scale),
-                    pixelScale: scale
-                )
-                prepareCameraIfNeeded()
-            } catch {
-                alert("获取屏幕信息失败：\(error.localizedDescription)")
+                _ = once.run { continuation.resume(returning: display) }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                _ = once.run { continuation.resume(returning: nil) }
             }
         }
     }
 
     /// 绿框拖动/缩放回调：同步 pendingTarget 与预录制条宽高（工具栏在拖动结束后才挪位）
     private func pendingRegionChanged(to rect: NSRect) {
-        guard case .region(let display, let screen, _) = pendingTarget else { return }
-        pendingTarget = .region(display: display, screen: screen, rect: rect)
+        guard case .region(let screen, _) = pendingTarget else { return }
+        pendingTarget = .region(screen: screen, rect: rect)
         let scale = screen.backingScaleFactor
         preRecordBar.updateRegion(
             rect: rect,
@@ -648,7 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     }
 
     private func resizePendingRegion(to newSize: NSSize) {
-        guard case .region(let display, let screen, let oldRect) = pendingTarget else { return }
+        guard case .region(let screen, let oldRect) = pendingTarget else { return }
         var rect = NSRect(
             x: oldRect.midX - newSize.width / 2,
             y: oldRect.midY - newSize.height / 2,
@@ -657,7 +691,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         )
         rect = rect.intersection(screen.frame)
         guard rect.width >= 16, rect.height >= 16 else { return }
-        pendingTarget = .region(display: display, screen: screen, rect: rect)
+        pendingTarget = .region(screen: screen, rect: rect)
         regionFrame.update(rect: rect)
         let scale = screen.backingScaleFactor
         preRecordBar.updateRegion(
@@ -676,8 +710,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         }
         preRecordBar.hide()
         pendingTarget = nil
+        let screen = Self.screenToCapture(of: pending)
+        let cachedDisplay = pendingDisplay
+        pendingDisplay = nil
+        // 让还在路上的后台补查作废，避免把结果写回下一次选区
+        pendingDisplayRequest += 1
         Task { [weak self] in
             guard let self else { return }
+            var display = cachedDisplay
+            if display == nil, let screen {
+                display = await Self.display(for: screen)
+            }
+            if screen != nil, display == nil {
+                self.regionFrame.hide()
+                self.hideCameraPreview()
+                self.alert("没能读到屏幕信息，录制无法开始。\n\n请确认「屏幕录制」权限已授权；如果已经打开，去系统设置里关一次再打开「自由录屏」后重启 App。")
+                return
+            }
             // 开关是在选区阶段打开的，摄像头通常已在跑；这里兜住「刚打开就点开始」
             if self.settings.cameraEnabled {
                 let placement = self.currentCameraPlacement
@@ -699,16 +748,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                     self.alert("摄像头没能开启，本次将只录制屏幕。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
                 }
             }
-            self.beginRecording(pending: pending)
+            self.beginRecording(pending: pending, display: display)
         }
     }
 
-    private func beginRecording(pending: PendingTarget) {
+    private static func screenToCapture(of target: PendingTarget) -> NSScreen? {
+        switch target {
+        case .screen(let screen), .region(let screen, _):
+            return screen
+        case .window:
+            return nil
+        }
+    }
+
+    private func beginRecording(pending: PendingTarget, display resolved: SCDisplay?) {
         // 屏幕类录制一律带上 source：录制中途才打开画中画时也有合成器可用，
         // 没帧时合成器整帧透传，不开摄像头等于零开销
         let camera = cameraPip.source
         switch pending {
-        case .region(let display, let screen, let rect):
+        case .region(let screen, let rect):
+            guard let display = resolved else { return }
             regionFrame.setEditable(false)
             // 屏幕全局坐标（NS 系）→ 显示器本地坐标（CG 系，左上原点）
             let x = rect.origin.x - screen.frame.origin.x
@@ -731,7 +790,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                 settings: currentCaptureSettings(scale: Self.screenScale(for: window.frame)),
                 camera: camera
             )
-        case .screen(let display, let screen):
+        case .screen(let screen):
+            guard let display = resolved else { return }
             recordingAnchor = screen.frame
             rangeScreen = screen
             rangeWindowID = nil
