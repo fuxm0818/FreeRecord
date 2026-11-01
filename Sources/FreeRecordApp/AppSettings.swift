@@ -176,11 +176,15 @@ final class AppSettings: ObservableObject {
         cameraCenterY = d.object(forKey: "camera.centerY") as? Double ?? 0.20
         hotkeysEnabled = d.object(forKey: "hotkeysEnabled") as? Bool ?? true
         launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
-        if let path = d.string(forKey: "saveDirectory") {
+        let fallbackDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Movies/自由录屏", isDirectory: true)
+        // 成品不能落在系统临时目录：会被系统清理，用户也找不到文件
+        if let path = d.string(forKey: "saveDirectory"),
+           !Self.isTemporaryDirectory(URL(fileURLWithPath: path, isDirectory: true)) {
             saveDirectory = URL(fileURLWithPath: path, isDirectory: true)
         } else {
-            saveDirectory = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Movies/自由录屏", isDirectory: true)
+            saveDirectory = fallbackDirectory
+            d.set(fallbackDirectory.path, forKey: "saveDirectory")
         }
         askNameOnSave = d.object(forKey: "askNameOnSave") as? Bool ?? false
         if !canCaptureSystemAudio, audioForScreen.wantsSystemAudio {
@@ -189,6 +193,16 @@ final class AppSettings: ObservableObject {
         if !canCaptureSystemAudio, audioForAudioOnly.wantsSystemAudio {
             audioForAudioOnly = audioForAudioOnly.wantsMicrophone ? .microphone : .none
         }
+    }
+
+    private static func isTemporaryDirectory(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        let candidates = [
+            FileManager.default.temporaryDirectory.standardizedFileURL.path,
+            "/tmp",
+            "/private/tmp",
+        ]
+        return candidates.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
     private static func applyLoginItem(enabled: Bool) {

@@ -11,8 +11,10 @@ final class SavePanelController {
         guard !isPresenting else { return }
         isPresenting = true
 
-        // 先把文件挪到临时目录，避免默认目录里同名文件触发「替换」询问
-        let staged = stage(recording)
+        // 先把文件挪到暂存子目录，避免默认目录里同名文件触发「替换」询问。
+        // 暂存放在目标目录内而不是 /private/tmp：弹窗没等到结果或 App 异常退出时，
+        // 文件仍留在用户自己的目录里，不会漂到系统临时区。
+        let staged = stage(recording, near: defaultDirectory)
 
         let panel = NSSavePanel()
         panel.title = "保存录制"
@@ -42,10 +44,9 @@ final class SavePanelController {
         }
     }
 
-    private func stage(_ recording: SavedRecording) -> SavedRecording {
+    private func stage(_ recording: SavedRecording, near directory: URL) -> SavedRecording {
         let fm = FileManager.default
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("FreeRec-Staging", isDirectory: true)
+        let dir = directory.appendingPathComponent("FreeRec-Staging", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let destination = dir.appendingPathComponent(recording.url.lastPathComponent)
         guard recording.url.deletingLastPathComponent().standardizedFileURL != dir.standardizedFileURL else {

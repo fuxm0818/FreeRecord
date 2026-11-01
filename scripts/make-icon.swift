@@ -1,14 +1,14 @@
 #!/usr/bin/env swift
-// 生成 Resources/AppIcon.icns：相机字形与菜单栏 camera.on.rectangle 一致。
-// 画布必须满幅不透明：macOS 26 会给带透明边距的旧式图标再套一层底板，
-// 满幅图标则由系统按自己的超椭圆裁形；旧系统显示为方形底板。
+// 生成两套应用图标：
+// - Resources/AppIcon.icns：824/1024 的圆角底板 + 透明留白，和系统原生图标同规格。
+//   macOS 12–15 的 Dock / 访达 / 启动台都按图片原样显示，满幅方图会比其他图标
+//   大一圈、而且是直角。macOS 26 会给它套上系统底板（旧式图标的官方兜底）。
+// - Resources/AppIconModern.icns：满幅超椭圆裁形，给 macOS 26 及以上用作运行时的
+//   Dock 图标（系统不再给满幅图标加底板，看起来和原生图标一致）。
 // 用法：swift scripts/make-icon.swift
 import AppKit
 
-let outputURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    .appendingPathComponent("Resources/AppIcon.icns")
-let iconsetURL = FileManager.default.temporaryDirectory
-    .appendingPathComponent("FreeRecord.iconset", isDirectory: true)
+let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 
 func roundedRect(_ r: NSRect, _ radius: CGFloat) -> NSBezierPath {
     NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius)
@@ -44,8 +44,7 @@ func cameraGlyph(box: NSRect, dx: CGFloat) -> (window: NSBezierPath, body: NSBez
     return (window, body, lens, dot)
 }
 
-func drawIcon(pixels: Int) -> NSBitmapImageRep {
-    let size = CGFloat(pixels)
+func newBitmap(pixels: Int) -> NSBitmapImageRep {
     guard let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil,
         pixelsWide: pixels,
@@ -58,15 +57,20 @@ func drawIcon(pixels: Int) -> NSBitmapImageRep {
         bytesPerRow: 0,
         bitsPerPixel: 0
     ) else { fatalError("无法创建位图") }
+    rep.size = NSSize(width: pixels, height: pixels)
+    return rep
+}
 
-    rep.size = NSSize(width: size, height: size)
+// 满幅画面：浅色渐变底 + 相机字形，不裁圆角
+func drawArtwork(pixels: Int) -> NSBitmapImageRep {
+    let size = CGFloat(pixels)
+    let rep = newBitmap(pixels: pixels)
     NSGraphicsContext.saveGraphicsState()
     guard let graphics = NSGraphicsContext(bitmapImageRep: rep) else { fatalError("无法创建上下文") }
     NSGraphicsContext.current = graphics
     let ctx = graphics.cgContext
     ctx.setShouldAntialias(true)
 
-    // 满幅画布：Alpha 必须覆盖到四边，否则 macOS 26 会再套一层底板
     let rect = NSRect(x: 0, y: 0, width: size, height: size)
 
     // 浅色渐变底
@@ -172,8 +176,103 @@ func drawIcon(pixels: Int) -> NSBitmapImageRep {
     return rep
 }
 
-try? FileManager.default.removeItem(at: iconsetURL)
-try FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
+// 旧式图标：整幅画面缩放进 824/1024 的圆角底板，四周留透明边距
+func drawClassicIcon(pixels: Int) -> NSBitmapImageRep {
+    let size = CGFloat(pixels)
+    let rep = newBitmap(pixels: pixels)
+    NSGraphicsContext.saveGraphicsState()
+    guard let graphics = NSGraphicsContext(bitmapImageRep: rep) else { fatalError("无法创建上下文") }
+    NSGraphicsContext.current = graphics
+    let ctx = graphics.cgContext
+    ctx.setShouldAntialias(true)
+    ctx.interpolationQuality = .high
+
+    // 系统原生网格：1024 画布里 824 的底板，圆角半径 22.5%
+    let inset = size * (100.0 / 1024.0)
+    let rect = NSRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
+    let radius = rect.width * 0.225
+    let plate = roundedRect(rect, radius)
+
+    // 底板投影：旧系统 Dock 里其他图标都自带一层，缺了会显得发平
+    ctx.saveGState()
+    ctx.setShadow(
+        offset: CGSize(width: 0, height: -size * 0.006),
+        blur: size * 0.018,
+        color: NSColor.black.withAlphaComponent(0.32).cgColor
+    )
+    NSColor.black.setFill()
+    plate.fill()
+    ctx.restoreGState()
+
+    // 满幅画面缩进底板；裁圆角后四角恢复透明
+    ctx.saveGState()
+    plate.addClip()
+    let artwork = NSImage(size: NSSize(width: pixels, height: pixels))
+    artwork.addRepresentation(drawArtwork(pixels: pixels))
+    artwork.draw(
+        in: rect,
+        from: NSRect(x: 0, y: 0, width: pixels, height: pixels),
+        operation: .sourceOver,
+        fraction: 1
+    )
+    ctx.restoreGState()
+
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
+
+// macOS 26 的圆角是超椭圆，直接按画布下缘裁一圈：即使 Dock 不再二次裁形也不会出现直角
+func superellipsePath(rect: NSRect, exponent: CGFloat = 5) -> NSBezierPath {
+    let a = rect.width / 2
+    let b = rect.height / 2
+    let cx = rect.midX
+    let cy = rect.midY
+    let path = NSBezierPath()
+    let steps = 720
+    let power = 2 / exponent
+    for i in 0...steps {
+        let t = CGFloat(i) / CGFloat(steps) * 2 * .pi
+        let ct = cos(t)
+        let st = sin(t)
+        let x = cx + a * copysign(pow(abs(ct), power), ct)
+        let y = cy + b * copysign(pow(abs(st), power), st)
+        if i == 0 {
+            path.move(to: NSPoint(x: x, y: y))
+        } else {
+            path.line(to: NSPoint(x: x, y: y))
+        }
+    }
+    path.close()
+    return path
+}
+
+// 新系统图标：满幅画面按超椭圆裁形，四角透明
+func drawModernIcon(pixels: Int) -> NSBitmapImageRep {
+    let size = CGFloat(pixels)
+    let rep = newBitmap(pixels: pixels)
+    NSGraphicsContext.saveGraphicsState()
+    guard let graphics = NSGraphicsContext(bitmapImageRep: rep) else { fatalError("无法创建上下文") }
+    NSGraphicsContext.current = graphics
+    let ctx = graphics.cgContext
+    ctx.setShouldAntialias(true)
+    ctx.interpolationQuality = .high
+
+    let rect = NSRect(x: 0, y: 0, width: size, height: size)
+    ctx.saveGState()
+    superellipsePath(rect: rect).addClip()
+    let artwork = NSImage(size: NSSize(width: pixels, height: pixels))
+    artwork.addRepresentation(drawArtwork(pixels: pixels))
+    artwork.draw(
+        in: rect,
+        from: NSRect(x: 0, y: 0, width: pixels, height: pixels),
+        operation: .sourceOver,
+        fraction: 1
+    )
+    ctx.restoreGState()
+
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
 
 let variants: [(name: String, pixels: Int)] = [
     ("icon_16x16.png", 16),
@@ -188,17 +287,36 @@ let variants: [(name: String, pixels: Int)] = [
     ("icon_512x512@2x.png", 1024),
 ]
 
-for variant in variants {
-    guard let data = drawIcon(pixels: variant.pixels).representation(using: .png, properties: [:]) else {
-        fatalError("PNG 编码失败：\(variant.name)")
+func writeICNS(iconsetName: String, render: (Int) -> NSBitmapImageRep, to outputURL: URL) {
+    let iconsetURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(iconsetName, isDirectory: true)
+    try? FileManager.default.removeItem(at: iconsetURL)
+    try! FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
+
+    for variant in variants {
+        guard let data = render(variant.pixels).representation(using: .png, properties: [:]) else {
+            fatalError("PNG 编码失败：\(variant.name)")
+        }
+        try! data.write(to: iconsetURL.appendingPathComponent(variant.name))
     }
-    try data.write(to: iconsetURL.appendingPathComponent(variant.name))
+
+    try? FileManager.default.removeItem(at: outputURL)
+    let iconutil = Process()
+    iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+    iconutil.arguments = ["-c", "icns", iconsetURL.path, "-o", outputURL.path]
+    try! iconutil.run()
+    iconutil.waitUntilExit()
+    guard iconutil.terminationStatus == 0 else { fatalError("iconutil 失败") }
+    print("已生成 \(outputURL.path)")
 }
 
-let iconutil = Process()
-iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
-iconutil.arguments = ["-c", "icns", iconsetURL.path, "-o", outputURL.path]
-try iconutil.run()
-iconutil.waitUntilExit()
-guard iconutil.terminationStatus == 0 else { fatalError("iconutil 失败") }
-print("已生成 \(outputURL.path)")
+writeICNS(
+    iconsetName: "FreeRecord.iconset",
+    render: drawClassicIcon,
+    to: rootURL.appendingPathComponent("Resources/AppIcon.icns")
+)
+writeICNS(
+    iconsetName: "FreeRecordModern.iconset",
+    render: drawModernIcon,
+    to: rootURL.appendingPathComponent("Resources/AppIconModern.icns")
+)

@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyModernIconIfNeeded()
         coordinator.delegate = self
         coordinator.saveDirectory = settings.saveDirectory
 
@@ -239,6 +240,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         Task { [weak self] in
             await self?.home.show()
         }
+    }
+
+    /// macOS 26 起系统按满幅超椭圆显示图标，带留白的旧式图标会被套一层底板；
+    /// 更早的系统则相反，Dock 按原图显示，满幅方图会比别的图标大且是直角。
+    /// 所以包内图标用带留白的圆角版，新系统启动时再换回满幅版。
+    private func applyModernIconIfNeeded() {
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26,
+              let url = Bundle.main.url(forResource: "AppIconModern", withExtension: "icns"),
+              let icon = NSImage(contentsOf: url) else { return }
+        NSApp.applicationIconImage = icon
     }
 
     // MARK: - 菜单

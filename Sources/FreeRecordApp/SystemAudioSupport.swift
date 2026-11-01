@@ -105,25 +105,28 @@ enum SystemAudioSupport {
         let alreadyExisted: Bool
     }
 
-    private static let multiOutputUID = "com.fuxiangming.freerec.multioutput.v2"
-    /// 1.0.4 及更早版本用扬声器当主设备，macOS 12 上黑声卡收不到声音
-    private static let legacyMultiOutputUID = "com.fuxiangming.freerec.multioutput"
+    private static let multiOutputUID = "com.fuxiangming.freerec.multioutput.v3"
+    /// 1.0.8 及更早版本没给聚合设备标 stacked，macOS 12 上只有主设备能出声
+    private static let legacyMultiOutputUIDs = [
+        "com.fuxiangming.freerec.multioutput.v2",
+        "com.fuxiangming.freerec.multioutput",
+    ]
 
     /// 创建"扬声器 + BlackHole"多输出聚合设备：既出声又能被录制。
     ///
-    /// 必须让 BlackHole 当主设备（时钟源）：在 macOS 12 上反向配置时扬声器有声音，
-    /// 但 BlackHole 子设备一直收到静音。扬声器作为副设备并开启漂移补偿跟随其时钟。
+    /// 关键是显式标 stacked（多输出）。缺这个标记时 macOS 12 只把声音送给主设备：
+    /// 1.0.4 之前扬声器当主设备，喇叭有声但 BlackHole 收到静音；1.0.5 之后换成
+    /// BlackHole 当主设备，录到了系统声、喇叭却从此没声音。主设备仍应是真实输出
+    /// 设备（它同时是时钟源），BlackHole 作为副设备开漂移补偿跟随其时钟。
     static func createMultiOutputAggregate() throws -> AggregateResult {
         guard let blackHole = findBlackHole() else { throw SystemAudioSupportError.blackHoleNotInstalled }
         // 系统输出已经切在我们的聚合设备上（上次录完没切回）：沿用，别再重建
         if let current = defaultOutputDevice(), current.uid == multiOutputUID,
            let existing = deviceID(forUID: multiOutputUID),
-           let composition = aggregateComposition(existing),
-           composition.subDeviceUIDs.contains(blackHole.uid),
-           aggregateMainSubDeviceUID(existing) == blackHole.uid {
+           isUsableAggregate(existing, blackHole: blackHole) {
             return AggregateResult(deviceID: existing, alreadyExisted: true)
         }
-        guard let output = defaultOutputDevice(), output.uid != multiOutputUID else {
+        guard let output = defaultOutputDevice(), output.uid != multiOutputUID, output.uid != blackHole.uid else {
             throw SystemAudioSupportError.noOutputDevice
         }
         if let existing = deviceID(forUID: multiOutputUID) {
@@ -131,9 +134,13 @@ enum SystemAudioSupport {
             if isUsableAggregate(existing, blackHole: blackHole, output: output) {
                 return AggregateResult(deviceID: existing, alreadyExisted: true)
             }
+            if defaultOutputDevice()?.deviceID == existing {
+                _ = setDefaultOutput(to: output.deviceID)
+            }
             AudioHardwareDestroyAggregateDevice(existing)
         }
-        if let legacy = deviceID(forUID: legacyMultiOutputUID) {
+        for uid in legacyMultiOutputUIDs {
+            guard let legacy = deviceID(forUID: uid), defaultOutputDevice()?.deviceID != legacy else { continue }
             AudioHardwareDestroyAggregateDevice(legacy)
         }
 
@@ -145,10 +152,11 @@ enum SystemAudioSupport {
             kAudioAggregateDeviceNameKey: "自由录屏多输出",
             kAudioAggregateDeviceUIDKey: multiOutputUID,
             kAudioAggregateDeviceIsPrivateKey: false,
-            kAudioAggregateDeviceMainSubDeviceKey: blackHole.uid,
+            kAudioAggregateDeviceIsStackedKey: 1,
+            kAudioAggregateDeviceMainSubDeviceKey: output.uid,
             kAudioAggregateDeviceSubDeviceListKey: [
-                [kAudioSubDeviceUIDKey: blackHole.uid],
-                [kAudioSubDeviceUIDKey: output.uid, kAudioSubDeviceDriftCompensationKey: 1],
+                [kAudioSubDeviceUIDKey: output.uid],
+                [kAudioSubDeviceUIDKey: blackHole.uid, kAudioSubDeviceDriftCompensationKey: 1],
             ],
         ]
         var aggregateID = AudioObjectID(0)
@@ -188,14 +196,42 @@ enum SystemAudioSupport {
         _ = setDefaultOutput(to: target)
     }
 
+    private static func isUsableAggregate(_ deviceID: AudioObjectID, blackHole: VirtualDevice) -> Bool {
+        guard let composition = aggregateComposition(deviceID),
+              composition.subDeviceUIDs.contains(blackHole.uid),
+              let main = aggregateMainSubDeviceUID(deviceID),
+              main != blackHole.uid,
+              aggregateIsStacked(deviceID) else {
+            return false
+        }
+        return true
+    }
+
     private static func isUsableAggregate(_ deviceID: AudioObjectID, blackHole: VirtualDevice, output: VirtualDevice) -> Bool {
         guard let composition = aggregateComposition(deviceID),
               composition.subDeviceUIDs.contains(blackHole.uid),
               composition.subDeviceUIDs.contains(output.uid),
-              aggregateMainSubDeviceUID(deviceID) == blackHole.uid else {
+              aggregateMainSubDeviceUID(deviceID) == output.uid,
+              aggregateIsStacked(deviceID) else {
             return false
         }
         return true
+    }
+
+    /// stacked = 多输出：所有子设备收到同一路声音。缺了它 macOS 12 只喂主设备。
+    private static func aggregateIsStacked(_ deviceID: AudioObjectID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioAggregateDevicePropertyComposition,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: CFDictionary?
+        var size = UInt32(MemoryLayout<CFDictionary?>.size)
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, pointer)
+        }
+        guard status == noErr, let dictionary = value as? [String: Any] else { return false }
+        return (dictionary[kAudioAggregateDeviceIsStackedKey] as? NSNumber)?.boolValue == true
     }
 
     private static func aggregateMainSubDeviceUID(_ deviceID: AudioObjectID) -> String? {
