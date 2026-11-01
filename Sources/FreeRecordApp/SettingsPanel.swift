@@ -124,6 +124,12 @@ struct SettingsView: View {
                     Text("系统声音可直接录制，无需额外设置。")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                } else if settings.canCaptureSystemAudio {
+                    Text("已检测到 BlackHole：录屏时会把系统输出自动切到「自由录屏多输出」（扬声器 + BlackHole），停止后切回原来的输出设备。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Button("重建多输出设备…", action: onCreateMultiOutput)
+                        .controlSize(.small)
                 } else {
                     Text("当前 macOS 版本需要 BlackHole 虚拟声卡才能录制系统声音。")
                         .font(.caption)

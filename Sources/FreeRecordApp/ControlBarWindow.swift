@@ -126,7 +126,7 @@ final class ControlBarController: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.configureAsCaptureHiddenFloatingUI()
+        panel.configureAsCaptureHiddenFloatingUI(level: toolbarWindowLevel)
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
 

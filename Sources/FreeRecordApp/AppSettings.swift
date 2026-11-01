@@ -114,10 +114,18 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// macOS 13 起 ScreenCaptureKit 可以直接采到系统声音
     var supportsSystemAudio: Bool {
         ProcessInfo.processInfo.isOperatingSystemAtLeast(
             OperatingSystemVersion(majorVersion: 13, minorVersion: 0, patchVersion: 0)
         )
+    }
+
+    /// 这台机器现在能不能录系统声音：macOS 13+，或装了 BlackHole 的老系统。
+    /// 不能只看系统版本——macOS 12 装了 BlackHole 一样能录，之前直接把开关拨掉，
+    /// 表现为「明明选了系统声音，成片里却没有」。
+    var canCaptureSystemAudio: Bool {
+        supportsSystemAudio || SystemAudioSupport.findBlackHole() != nil
     }
 
     /// 画中画大小可调区间（与预览窗拖角共用）
@@ -140,10 +148,10 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// 录屏实际生效的声音配置（老系统不支持系统声采集时降级）
+    /// 录屏实际生效的声音配置（老系统且没有 BlackHole 时降级）
     var effectiveAudio: AudioSource {
         let audio = audioForScreen
-        guard audio.wantsSystemAudio, !supportsSystemAudio else { return audio }
+        guard audio.wantsSystemAudio, !canCaptureSystemAudio else { return audio }
         return audio.wantsMicrophone ? .microphone : .none
     }
 
@@ -175,10 +183,10 @@ final class AppSettings: ObservableObject {
                 .appendingPathComponent("Movies/自由录屏", isDirectory: true)
         }
         askNameOnSave = d.object(forKey: "askNameOnSave") as? Bool ?? false
-        if !supportsSystemAudio, audioForScreen.wantsSystemAudio {
+        if !canCaptureSystemAudio, audioForScreen.wantsSystemAudio {
             audioForScreen = audioForScreen.wantsMicrophone ? .microphone : .none
         }
-        if !supportsSystemAudio, audioForAudioOnly.wantsSystemAudio {
+        if !canCaptureSystemAudio, audioForAudioOnly.wantsSystemAudio {
             audioForAudioOnly = audioForAudioOnly.wantsMicrophone ? .microphone : .none
         }
     }

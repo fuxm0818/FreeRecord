@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         controlBar.onToggleCamera = { [weak self] in
             guard let self else { return }
             // 统一走 settings.cameraEnabled，预录条开关与录制中开关共用一套副作用
-            settings.cameraEnabled.toggle()
+            self.settings.cameraEnabled.toggle()
         }
         controlBar.elapsedProvider = { [weak self] in self?.coordinator.elapsed ?? 0 }
 

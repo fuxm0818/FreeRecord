@@ -5,18 +5,6 @@ enum PreRecordTarget {
     case screen(NSScreen)
     case region(NSScreen, CGRect)
     case windowRect(NSRect)
-
-    var preferredBarOrigin: NSPoint? {
-        switch self {
-        case .screen(let screen):
-            let frame = screen.visibleFrame
-            return NSPoint(x: frame.midX, y: frame.minY + 80)
-        case .region(_, let rect):
-            return NSPoint(x: rect.midX, y: rect.minY)
-        case .windowRect(let rect):
-            return NSPoint(x: rect.midX, y: rect.minY)
-        }
-    }
 }
 
 /// 预录制工具栏（640×50 单行）：
@@ -60,7 +48,7 @@ final class PreRecordBarController: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.configureAsCaptureHiddenFloatingUI()
+        panel.configureAsCaptureHiddenFloatingUI(level: toolbarWindowLevel)
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
 
@@ -295,26 +283,22 @@ final class PreRecordBarController: NSObject {
     }
 
     private func systemAudioAvailable(_ settings: AppSettings) -> Bool {
-        settings.supportsSystemAudio || SystemAudioSupport.findBlackHole() != nil
+        settings.canCaptureSystemAudio
     }
 
     private static func barOrigin(for target: PreRecordTarget, panelSize: NSSize) -> NSPoint {
-        guard let preferred = target.preferredBarOrigin else {
-            let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-            return NSPoint(x: screen.midX - panelSize.width / 2, y: screen.midY - panelSize.height / 2)
+        switch target {
+        case .screen(let screen):
+            let visible = screen.visibleFrame
+            let y = min(max(visible.minY + 24, visible.minY + 8), visible.maxY - panelSize.height - 8)
+            return NSPoint(x: visible.midX - panelSize.width / 2, y: y)
+        case .region(let screen, let rect):
+            return floatingToolbarOrigin(near: rect, panelSize: panelSize, visible: screen.visibleFrame)
+        case .windowRect(let rect):
+            let screen = NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main
+            let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            return floatingToolbarOrigin(near: rect, panelSize: panelSize, visible: visible)
         }
-        let screen = NSScreen.screens.first { screen in
-            let point = NSPoint(x: preferred.x, y: preferred.y + panelSize.height)
-            return NSMouseInRect(point, screen.frame, false)
-        } ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        var x = preferred.x - panelSize.width / 2
-        var y = preferred.y - panelSize.height - 10
-        if y < visible.minY + 8 {
-            y = preferred.y + 10
-        }
-        x = min(max(x, visible.minX + 8), visible.maxX - panelSize.width - 8)
-        return NSPoint(x: x, y: y)
     }
 
     @objc private func parameterChanged() {

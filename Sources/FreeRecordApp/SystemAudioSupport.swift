@@ -7,12 +7,14 @@ enum SystemAudioSupportError: LocalizedError {
     case blackHoleNotInstalled
     case noOutputDevice
     case createFailed(OSStatus)
+    case switchOutputFailed
 
     var errorDescription: String? {
         switch self {
         case .blackHoleNotInstalled: return "没有检测到 BlackHole 虚拟声卡"
         case .noOutputDevice: return "没有找到系统输出设备"
         case .createFailed(let status): return "创建多输出设备失败（错误码 \(status)）"
+        case .switchOutputFailed: return "无法把系统输出切换到多输出设备"
         }
     }
 }
@@ -113,18 +115,31 @@ enum SystemAudioSupport {
     /// 但 BlackHole 子设备一直收到静音。扬声器作为副设备并开启漂移补偿跟随其时钟。
     static func createMultiOutputAggregate() throws -> AggregateResult {
         guard let blackHole = findBlackHole() else { throw SystemAudioSupportError.blackHoleNotInstalled }
-        if let existing = deviceID(forUID: multiOutputUID) {
+        // 系统输出已经切在我们的聚合设备上（上次录完没切回）：沿用，别再重建
+        if let current = defaultOutputDevice(), current.uid == multiOutputUID,
+           let existing = deviceID(forUID: multiOutputUID),
+           let composition = aggregateComposition(existing),
+           composition.subDeviceUIDs.contains(blackHole.uid),
+           aggregateMainSubDeviceUID(existing) == blackHole.uid {
             return AggregateResult(deviceID: existing, alreadyExisted: true)
-        }
-        if let legacy = deviceID(forUID: legacyMultiOutputUID) {
-            AudioHardwareDestroyAggregateDevice(legacy)
         }
         guard let output = defaultOutputDevice(), output.uid != multiOutputUID else {
             throw SystemAudioSupportError.noOutputDevice
         }
+        if let existing = deviceID(forUID: multiOutputUID) {
+            // 输出设备变了（插耳机、外接屏）或组成不对都要重建，否则声音去了旧设备
+            if isUsableAggregate(existing, blackHole: blackHole, output: output) {
+                return AggregateResult(deviceID: existing, alreadyExisted: true)
+            }
+            AudioHardwareDestroyAggregateDevice(existing)
+        }
+        if let legacy = deviceID(forUID: legacyMultiOutputUID) {
+            AudioHardwareDestroyAggregateDevice(legacy)
+        }
 
-        let existing = findExistingAggregate(composedOf: [blackHole.uid, output.uid])
-        if let existing { return AggregateResult(deviceID: existing, alreadyExisted: true) }
+        if let reusable = findExistingAggregate(blackHole: blackHole, output: output) {
+            return AggregateResult(deviceID: reusable, alreadyExisted: true)
+        }
 
         let composition: [String: Any] = [
             kAudioAggregateDeviceNameKey: "自由录屏多输出",
@@ -142,6 +157,60 @@ enum SystemAudioSupport {
             throw SystemAudioSupportError.createFailed(status)
         }
         return AggregateResult(deviceID: aggregateID, alreadyExisted: false)
+    }
+
+    /// 录制期间的临时路由：开始前切到多输出设备，收尾时切回用户原来的输出。
+    struct Routing {
+        let aggregateID: AudioObjectID
+        let previous: VirtualDevice?
+        var didChange: Bool { previous != nil }
+    }
+
+    /// macOS 12 录系统声音的前提：默认输出必须是「扬声器 + BlackHole」的聚合设备。
+    /// 只建设备不切输出的话，声音还是从扬声器直出，BlackHole 收到的是静音。
+    static func routeSystemAudio() throws -> Routing {
+        let result = try createMultiOutputAggregate()
+        if let current = defaultOutputDevice(), current.deviceID == result.deviceID {
+            return Routing(aggregateID: result.deviceID, previous: nil)
+        }
+        let previous = defaultOutputDevice()
+        guard setDefaultOutput(to: result.deviceID) else {
+            throw SystemAudioSupportError.switchOutputFailed
+        }
+        return Routing(aggregateID: result.deviceID, previous: previous)
+    }
+
+    static func restoreOutput(_ routing: Routing) {
+        guard let previous = routing.previous else { return }
+        // 录制期间用户自己换了输出就别抢回来
+        guard let current = defaultOutputDevice(), current.deviceID == routing.aggregateID else { return }
+        let target = deviceID(forUID: previous.uid) ?? previous.deviceID
+        _ = setDefaultOutput(to: target)
+    }
+
+    private static func isUsableAggregate(_ deviceID: AudioObjectID, blackHole: VirtualDevice, output: VirtualDevice) -> Bool {
+        guard let composition = aggregateComposition(deviceID),
+              composition.subDeviceUIDs.contains(blackHole.uid),
+              composition.subDeviceUIDs.contains(output.uid),
+              aggregateMainSubDeviceUID(deviceID) == blackHole.uid else {
+            return false
+        }
+        return true
+    }
+
+    private static func aggregateMainSubDeviceUID(_ deviceID: AudioObjectID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioAggregateDevicePropertyMainSubDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: CFString?
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, pointer)
+        }
+        guard status == noErr, let string = value as String? else { return nil }
+        return string
     }
 
     private static func deviceID(forUID target: String) -> AudioObjectID? {
@@ -179,7 +248,7 @@ enum SystemAudioSupport {
         return status == noErr
     }
 
-    private static func findExistingAggregate(composedOf uids: [String]) -> AudioObjectID? {
+    private static func findExistingAggregate(blackHole: VirtualDevice, output: VirtualDevice) -> AudioObjectID? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -200,13 +269,9 @@ enum SystemAudioSupport {
                 mElement: kAudioObjectPropertyElementMain
             )
             if AudioObjectGetPropertyData(deviceID, &transportAddress, 0, nil, &transportSize, &transportType) == noErr,
-               transportType == kAudioDeviceTransportTypeAggregate {
-                if let composition = aggregateComposition(deviceID) {
-                    let memberUIDs = composition.subDeviceUIDs
-                    if uids.allSatisfy({ memberUIDs.contains($0) }) {
-                        return deviceID
-                    }
-                }
+               transportType == kAudioDeviceTransportTypeAggregate,
+               isUsableAggregate(deviceID, blackHole: blackHole, output: output) {
+                return deviceID
             }
         }
         return nil

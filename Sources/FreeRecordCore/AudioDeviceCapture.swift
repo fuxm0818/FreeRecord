@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 
 public final class AudioDeviceCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
@@ -42,17 +43,85 @@ public final class AudioDeviceCapture: NSObject, AVCaptureAudioDataOutputSampleB
     }
 
     public static func audioDevices() -> [AVCaptureDevice] {
+        // devices(for:) 在新 SDK 上只是标记弃用；DiscoverySession 的类型枚举
+        // 在旧 SDK（macOS 12/13）上取不全外接麦，这里继续用旧 API 保证兼容
         AVCaptureDevice.devices(for: .audio)
     }
 
     public static func defaultDeviceName() -> String? {
-        audioDevices().first?.localizedName
+        preferredDefaultInput()?.localizedName
+    }
+
+    /// 真正可当麦克风用的默认输入设备。
+    ///
+    /// 不能直接取 `audioDevices().first`：装有 BlackHole 的机器上它常排在
+    /// 内建麦克风前面，录出来是一整条静音轨。这里按 CoreAudio 的默认输入
+    /// 设备（系统偏好里那个）去匹配，匹配不上再退回排除虚拟声卡后的第一个。
+    public static func preferredDefaultInput() -> AVCaptureDevice? {
+        let devices = audioDevices()
+        if let uid = defaultInputUID(), let match = devices.first(where: { $0.uniqueID == uid }) {
+            return match
+        }
+        // AVCapture 与 CoreAudio 的 UID 偶有不一致，再按名字兜一次
+        if let name = defaultInputName(), let match = devices.first(where: { $0.localizedName == name }) {
+            return match
+        }
+        return devices.first { !isVirtual($0) } ?? devices.first
+    }
+
+    /// BlackHole / 多输出 / 回环这类虚拟设备能采集，但不是用户想要的麦克风
+    private static func isVirtual(_ device: AVCaptureDevice) -> Bool {
+        let name = device.localizedName
+        let markers = ["BlackHole", "多输出", "Multi-Output", "Aggregate", "Loopback", "Soundflower"]
+        return markers.contains { name.localizedCaseInsensitiveContains($0) }
+    }
+
+    private static func defaultInputUID() -> String? {
+        defaultInputString(selector: kAudioDevicePropertyDeviceUID)
+    }
+
+    private static func defaultInputName() -> String? {
+        defaultInputString(selector: kAudioObjectPropertyName)
+    }
+
+    private static func defaultInputString(selector: AudioObjectPropertySelector) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceID = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID) == noErr,
+              deviceID != 0 else { return nil }
+
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: CFString?
+        var valueSize = UInt32(MemoryLayout<CFString?>.size)
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &valueSize, pointer)
+        }
+        guard status == noErr, let string = value as String? else { return nil }
+        return string
     }
 
     public func start(deviceName: String?) throws {
         let devices = Self.audioDevices()
-        guard let device = devices.first(where: { $0.localizedName == deviceName }) ?? devices.first else {
-            throw AudioError.deviceNotFound
+        let device: AVCaptureDevice
+        if let deviceName {
+            guard let match = devices.first(where: { $0.localizedName == deviceName }) else {
+                throw AudioError.deviceNotFound
+            }
+            device = match
+        } else {
+            guard let preferred = Self.preferredDefaultInput() else {
+                throw AudioError.deviceNotFound
+            }
+            device = preferred
         }
 
         let input = try AVCaptureDeviceInput(device: device)

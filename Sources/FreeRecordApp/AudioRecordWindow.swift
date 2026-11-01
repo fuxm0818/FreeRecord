@@ -136,7 +136,7 @@ final class AudioRecordWindowController {
             label.font = .systemFont(ofSize: 12)
             label.textColor = NSColor.white.withAlphaComponent(0.85)
         }
-        systemSwitch.isEnabled = settings.supportsSystemAudio || SystemAudioSupport.findBlackHole() != nil
+        systemSwitch.isEnabled = settings.canCaptureSystemAudio
 
         let start = NSButton(title: "开始录制", target: self, action: #selector(startClicked))
         start.bezelStyle = .rounded
@@ -195,7 +195,7 @@ final class AudioRecordWindowController {
 
     private func updateUI() {
         micSwitch?.isEnabled = !recording && !preparing
-        systemSwitch?.isEnabled = !recording && !preparing && (AppSettings.shared.supportsSystemAudio || SystemAudioSupport.findBlackHole() != nil)
+        systemSwitch?.isEnabled = !recording && !preparing && AppSettings.shared.canCaptureSystemAudio
         pauseButton?.isHidden = !recording
         startButton?.title = recording ? "停止并保存" : (preparing ? "准备中…" : "开始录制")
         startButton?.isEnabled = recording || (!preparing && (micSwitch?.isOn == true || systemSwitch?.isOn == true))

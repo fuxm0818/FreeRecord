@@ -62,6 +62,8 @@ final class RecordingCoordinator {
     private var systemAudioStream: SystemAudioStreamCapture?
     private var mic: AudioDeviceCapture?
     private var systemAudioCapture: AudioDeviceCapture?
+    /// macOS 12 录系统声音时临时切到多输出设备，收尾必须切回
+    private var audioRouting: SystemAudioSupport.Routing?
     private var currentSize: (width: Int, height: Int)?
     /// 因缺屏幕录制权限而没启动成的录制，授权后自动续上
     private var pendingStart: (source: CaptureSource?, settings: CaptureSettings, cameraOverlay: CameraOverlaySource?)?
@@ -141,6 +143,17 @@ final class RecordingCoordinator {
             size = (0, 0)
         }
         let bitrate = max(2_000_000, Int(Double(size.width * size.height * settings.fps) * 0.08))
+
+        // 老系统靠 BlackHole 录系统声音：默认输出不切到聚合设备，黑声卡收到的就是静音。
+        // 这里在采集启动前切过去，收尾时再切回。
+        if hasSystem, blackHole != nil {
+            do {
+                audioRouting = try SystemAudioSupport.routeSystemAudio()
+            } catch {
+                delegate?.recordingFailed(message: "系统声音没能接通：\(error.localizedDescription)。\n\n可以在「设置 → 系统声音」里重新创建多输出设备，或先只录麦克风。")
+                return
+            }
+        }
 
         var createdWriter: RecordingWriter?
         do {
@@ -277,6 +290,7 @@ final class RecordingCoordinator {
         await systemAudioStream?.stop()
         systemAudioCapture?.stop()
         mic?.stop()
+        restoreAudioRouting()
         cancelWriter?.cancel()
         self.screen = nil
         self.systemAudioStream = nil
@@ -284,6 +298,12 @@ final class RecordingCoordinator {
         self.mic = nil
         self.writer = nil
         self.currentSize = nil
+    }
+
+    private func restoreAudioRouting() {
+        guard let routing = audioRouting else { return }
+        audioRouting = nil
+        SystemAudioSupport.restoreOutput(routing)
     }
 
     func stop() {
@@ -417,6 +437,7 @@ final class RecordingCoordinator {
         mic = nil
         systemAudioCapture?.stop()
         systemAudioCapture = nil
+        restoreAudioRouting()
         releaseSleepAssertion()
 
         let writer = self.writer
