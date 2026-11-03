@@ -78,12 +78,12 @@ public final class Mp3Exporter {
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
 
         let bitrate = bitrateKbps
+        let job = PCMJob(reader: reader, output: output)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = Self.run(
                     encoder: encoder,
-                    reader: reader,
-                    output: output,
+                    job: job,
                     bitrateKbps: bitrate,
                     destination: destination,
                     logURL: logURL
@@ -91,6 +91,13 @@ public final class Mp3Exporter {
                 continuation.resume(with: result)
             }
         }
+    }
+
+    /// AVAssetReader / AVAssetReaderOutput 不是 Sendable，但整段搬运只在这一条后台线程上跑、
+    /// 闭包独占持有，所以按「已核查过并发安全」处理，避免 Swift 6 的捕获告警
+    private struct PCMJob: @unchecked Sendable {
+        let reader: AVAssetReader
+        let output: AVAssetReaderOutput
     }
 
     private static let pcmSettings: [String: Any] = [
@@ -106,12 +113,13 @@ public final class Mp3Exporter {
     /// 在后台线程跑：往编码器 stdin 写数据会因管道背压阻塞，绝不能放在主线程。
     private static func run(
         encoder: URL,
-        reader: AVAssetReader,
-        output: AVAssetReaderOutput,
+        job: PCMJob,
         bitrateKbps: Int,
         destination: URL,
         logURL: URL
     ) -> Result<Void, Error> {
+        let reader = job.reader
+        let output = job.output
         var process: Process?
         var stdin: FileHandle?
         var failure: Error?

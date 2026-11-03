@@ -8,11 +8,22 @@ DIST="dist"
 APP="$DIST/$APP_NAME.app"
 
 echo "==> 准备 MP3 编码器（macOS 自身编不出 MP3，只能内嵌 LAME）"
+NEED_MP3_ENCODER=1
 if [[ "${ALLOW_MISSING_MP3_ENCODER:-0}" == "1" ]]; then
   # 离线应急：允许出不带编码器的包，此时纯录音成品退回 .m4a
+  NEED_MP3_ENCODER=0
   bash scripts/build-mp3-encoder.sh || echo "!! 编码器构建失败，本次包没有 MP3 输出"
 else
   bash scripts/build-mp3-encoder.sh
+fi
+# 脚本内部的失败可能被 EXIT trap 吃成 0，所以只认产物本身：
+# 少了这个文件还继续打包，发出去的包就是「点了录音只出 .m4a」而没人会告诉你
+if [[ "$NEED_MP3_ENCODER" == "1" ]]; then
+  [[ -x Vendor/bin/lame ]] || { echo "!! Vendor/bin/lame 没生成，终止出包（离线应急用 ALLOW_MISSING_MP3_ENCODER=1）"; exit 1; }
+  [[ -f Vendor/LICENSE.lame ]] || { echo "!! Vendor/LICENSE.lame 没生成，LGPL 要求随包附许可文本"; exit 1; }
+  ARCHES="$(lipo -archs Vendor/bin/lame)"
+  case " $ARCHES " in *" arm64 "*) ;; *) echo "!! Vendor/bin/lame 缺 arm64（实际：${ARCHES}）"; exit 1 ;; esac
+  case " $ARCHES " in *" x86_64 "*) ;; *) echo "!! Vendor/bin/lame 缺 x86_64，Intel Mac 会闪退（实际：${ARCHES}）"; exit 1 ;; esac
 fi
 
 echo "==> 构建 arm64"
@@ -67,4 +78,11 @@ else
 fi
 
 lipo -info "$APP/Contents/MacOS/$BIN_NAME"
+# 最后一道闸：产物里没有编码器就发出去，用户只会发现「录音出的是 .m4a」
+if [[ "$NEED_MP3_ENCODER" == "1" ]]; then
+  [[ -x "$APP/Contents/Helpers/lame" ]] || { echo "!! ${APP} 里没有 Helpers/lame，这个包出不了 MP3"; exit 1; }
+  echo "==> MP3 编码器：$(lipo -archs "$APP/Contents/Helpers/lame")"
+else
+  echo "==> 本次包不含 MP3 编码器（纯录音会退回 .m4a）"
+fi
 echo "==> 完成：$APP"

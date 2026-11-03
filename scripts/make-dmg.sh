@@ -5,14 +5,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP="${APP:-dist/FreeRecord.app}"
-[[ -d "$APP" ]] || { echo "!! 找不到 $APP，请先执行 bash scripts/build.sh"; exit 1; }
+[[ -d "$APP" ]] || { echo "!! 找不到 ${APP}，请先执行 bash scripts/build.sh"; exit 1; }
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 OUT="${OUT:-dist/FreeRecord-$VERSION.dmg}"
 mkdir -p dist
 
 STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
+# 保留真实退出码：trap 里最后一条命令成功会把失败吃成 0
+trap 'st=$?; rm -rf "$STAGE"; exit $st' EXIT
 mkdir -p "$STAGE/payload"
 cp -R "$APP" "$STAGE/payload/"
 ln -s /Applications "$STAGE/payload/Applications"
@@ -31,4 +32,4 @@ if [[ "${CODESIGN_IDENTITY:-}" == Developer\ ID* ]]; then
 else
   codesign --force --sign - "$OUT"
 fi
-echo "==> 完成：$OUT（$(du -h "$OUT" | cut -f1 | tr -d ' ')）"
+echo "==> 完成：${OUT}（$(du -h "$OUT" | cut -f1 | tr -d ' ')）"

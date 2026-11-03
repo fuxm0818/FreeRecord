@@ -11,7 +11,7 @@ CERT_NAME="${CERT_NAME:-FreeRec Dev}"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 if security find-identity -v -p codesigning | grep -q "\"$CERT_NAME\""; then
-  echo "==> 证书「$CERT_NAME」已存在，无需重复创建"
+  echo "==> 证书「${CERT_NAME}」已存在，无需重复创建"
   exit 0
 fi
 
@@ -60,5 +60,5 @@ echo "==> 结果"
 security find-identity -v -p codesigning | grep -E "\"$CERT_NAME\"|valid identities" || {
   echo "!! 未找到身份，请到「钥匙串访问」确认证书是否可用"; exit 1
 }
-echo "==> 完成。之后 bash scripts/build.sh 会自动用「$CERT_NAME」签名。"
+echo "==> 完成。之后 bash scripts/build.sh 会自动用「${CERT_NAME}」签名。"
 echo "    撤销：security delete-identity -c \"$CERT_NAME\" \"$KEYCHAIN\""

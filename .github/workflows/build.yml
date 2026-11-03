@@ -97,6 +97,16 @@ jobs:
           (cd dist && shasum -a 256 "FreeRecord-$VERSION.dmg" "FreeRecord-$VERSION.zip" > SHA256SUMS.txt)
           codesign -dvv dist/FreeRecord.app 2>&1 | sed -n '1,12p' || true
 
+      - name: 校验成品（MP3 编码器必须在包里）
+        # 1.1.0 那次 CI 的 lame 编译失败被脚本吞成了 0，于是发出了一个只能出 .m4a 的包。
+        # 这一关直接看产物：包里没编码器就别发布。
+        run: |
+          set -euo pipefail
+          test -x dist/FreeRecord.app/Contents/Helpers/lame
+          lipo -archs dist/FreeRecord.app/Contents/Helpers/lame
+          test -f dist/FreeRecord.app/Contents/Resources/LICENSE.lame
+          codesign --verify --deep --strict dist/FreeRecord.app
+
       - name: 可选：公证并装订 dmg
         if: env.HAS_NOTARY == 'true' && env.HAS_DEV_ID == 'true'
         env:

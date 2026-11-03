@@ -19,7 +19,7 @@ CACHE_DIR="${HOME}/.cache/freerec"
 TARBALL="${CACHE_DIR}/lame-${LAME_VERSION}.tar.gz"
 
 if [[ -x "$OUT_BIN" && "${FORCE:-0}" != "1" ]]; then
-  echo "==> 已存在 $OUT_BIN（FORCE=1 强制重建）"
+  echo "==> 已存在 ${OUT_BIN}（FORCE=1 强制重建）"
   lipo -info "$OUT_BIN"
   exit 0
 fi
@@ -45,13 +45,15 @@ fi
 tar tzf "$TARBALL" >/dev/null
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# EXIT trap 里最后一条命令的状态会盖掉真正的失败码（CI 上就是这样把「lame 没编出来」
+# 变成「构建成功」的），所以先把 $? 存下来再退出
+trap 'st=$?; rm -rf "$WORK"; exit $st' EXIT
 tar xzf "$TARBALL" -C "$WORK"
 SRC="$WORK/lame-$LAME_VERSION"
 [[ -d "$SRC" ]] || { echo "!! 源码包里没有 $SRC"; exit 1; }
 
 for ARCH in arm64 x86_64; do
-  echo "==> 编译 lame（$ARCH）"
+  echo "==> 编译 lame（${ARCH}）"
   mkdir -p "$WORK/build-$ARCH"
   CONFIGURE_ARGS=("--disable-shared")
   if [[ "$ARCH" != "$NATIVE_ARCH" ]]; then
@@ -72,6 +74,17 @@ lipo -create "$WORK/build-arm64/frontend/lame" "$WORK/build-x86_64/frontend/lame
 chmod +x "$OUT_BIN"
 cp "$SRC/LICENSE" "$OUT_LICENSE"
 
+# 两片都在才算通用二进制：少一片的话 Intel Mac 上点录制会直接崩
+ARCHES="$(lipo -archs "$OUT_BIN")"
+case " $ARCHES " in
+  *" arm64 "*) ;;
+  *) echo "!! $OUT_BIN 缺 arm64（实际：${ARCHES}）"; exit 1 ;;
+esac
+case " $ARCHES " in
+  *" x86_64 "*) ;;
+  *) echo "!! $OUT_BIN 缺 x86_64（实际：${ARCHES}）"; exit 1 ;;
+esac
+
 # 只允许依赖系统库：多一条第三方 dylib，别人机器上就是「打开即闪退」
 DEPS="$(otool -L "$OUT_BIN" | tail -n +2 | sed 's/^([^)]*)//' | sort -u)"
 case "$DEPS" in
@@ -82,4 +95,4 @@ case "$DEPS" in
 esac
 
 lipo -info "$OUT_BIN"
-echo "==> 完成：$OUT_BIN + $OUT_LICENSE"
+echo "==> 完成：${OUT_BIN} + ${OUT_LICENSE}"
