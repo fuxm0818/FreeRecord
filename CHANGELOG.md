@@ -6,7 +6,7 @@
 
 ### 修复
 
-- **纯录音成品能裁剪了**：「裁剪」对 `.mp3` / `.m4a` 以前也按视频那路走（`AVAssetExportPresetPassthrough` + MP4 封装），对音频成品毫无意义；而失败原因只写在一个从未被加进视图的提示标签上，所以点「导出裁剪」看起来什么都不发生。现在音频成品走新增的 `CompositionEditor.exportAudio`：时间轴重排与视频共用同一份 `makeComposition`，`.m4a` 仍只转封装，`.mp3` 交给内嵌 LAME 解码后重编码（48kHz / 192kbps，与直接录出来的参数一致）。裁剪窗按类型显示「裁剪录音」，导出后预览面板与历史列表同步切到新文件；包内没有编码器时退成 `.m4a` 而不是交一个坏文件
+- **纯录音成品能裁剪了**：「裁剪」对 `.mp3` / `.m4a` 以前也按视频那路走（`AVAssetExportPresetPassthrough` + MP4 封装），对音频成品毫无意义；而失败原因只写在一个从未被加进视图的提示标签上，所以点「导出裁剪」看起来什么都不发生。现在音频成品走新增的 `CompositionEditor.exportAudio`：时间轴重排与视频共用同一份 `makeComposition`，`.m4a` 仍只转封装，`.mp3` 交给内嵌 LAME 解码后重编码（48kHz / 192kbps，与直接录出来的参数一致）。裁剪窗按类型显示「裁剪录音」，导出后预览面板与历史列表同步切到新文件；没有编码器（只有 `ALLOW_MISSING_MP3_ENCODER=1` 自建才会这样）时，MP4 / `.m4a` 源仍按各自封装导出，裁剪 `.mp3` 会明确报错而不是产出坏文件
 - **补上系统主菜单，⌘Q 能退出**：`LSUIElement` 形态下 `NSApp.mainMenu` 一直是空的，菜单条没有本 App 的菜单，⌘Q 退出、⌘C/⌘V 复制粘贴、⌘W 关窗都没人接（历史列表改名的输入框也因此用不了快捷键）。现在手建 App / 编辑 / 窗口三份菜单：关于、设置…（⌘,）、服务、隐藏与隐藏其他、退出（⌘Q）、撤销重做与剪切拷贝粘贴全选、最小化（⌘M）、关闭窗口（⌘W）
 - **App 形态改为单点判定**：`refreshAppActivationPolicy()` 按「有没有可见的 titled 窗口」在 `.regular` 与 `.accessory` 之间切换，各窗口不再自己调 `setActivationPolicy`（原来只有首页窗口在切，只开预览/设置时仍是无菜单形态）。正在录制或等权限门控期间强制保持 `.accessory`，避免弹窗把 App 提成前台把 Dock 图标拍进画面
 
