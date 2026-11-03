@@ -147,32 +147,58 @@ public enum CompositionEditor {
 
     /// 导出裁剪结果。用 passthrough 预设：**只转封装，不重新编码**。
     public static func export(plan: Plan, progress: ((Double) -> Void)? = nil) async throws -> Result {
+        let composition = try await validatedComposition(plan)
+        let outputURL = uniqueOutputURL(plan.outputURL)
+        let fileType: AVFileType = outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
+        return try await passthroughExport(composition: composition, plan: plan,
+                                          outputURL: outputURL, fileType: fileType,
+                                          progress: progress)
+    }
+
+    /// 裁剪**纯音频成品**（`.mp3` / `.m4a`）。
+    ///
+    /// 与视频那路的区别：MP3 容器 AVFoundation 写不出来，所以 `.mp3` 只能
+    /// 「解码→重编码」，交给 `Mp3Exporter`（内嵌 LAME）；`.m4a` 仍可 passthrough。
+    /// 时间轴重排用的是同一个 `makeComposition`，多段裁剪与音画同步逻辑共用一份。
+    public static func exportAudio(plan: Plan, progress: ((Double) -> Void)? = nil) async throws -> Result {
+        let composition = try await validatedComposition(plan)
+        let outputURL = uniqueOutputURL(plan.outputURL)
+        guard outputURL.pathExtension.lowercased() == "mp3" else {
+            return try await passthroughExport(composition: composition, plan: plan,
+                                               outputURL: outputURL, fileType: .m4a,
+                                               progress: progress)
+        }
+
+        let exporter = Mp3Exporter()
+        do {
+            try await exporter.export(asset: composition, to: outputURL)
+        } catch {
+            throw EditorError.exportFailed(error.localizedDescription)
+        }
+        return Result(url: outputURL,
+                      duration: plan.keptDuration,
+                      fileSizeMB: fileSizeMB(of: outputURL))
+    }
+
+    // MARK: - 内部
+
+    private static func validatedComposition(_ plan: Plan) async throws -> AVComposition {
         guard !plan.keepSegments.isEmpty, plan.keptDuration > 0.001 else {
             throw EditorError.emptySegments
         }
-        let composition = try await makeComposition(plan: plan)
+        return try await makeComposition(plan: plan)
+    }
 
+    private static func passthroughExport(
+        composition: AVComposition,
+        plan: Plan,
+        outputURL: URL,
+        fileType: AVFileType,
+        progress: ((Double) -> Void)?
+    ) async throws -> Result {
         let fm = FileManager.default
-        try? fm.createDirectory(at: plan.outputURL.deletingLastPathComponent(),
+        try? fm.createDirectory(at: outputURL.deletingLastPathComponent(),
                                 withIntermediateDirectories: true)
-        // 同名文件可能是用户上一次的裁剪成果，不能静默删除——自动追加序号
-        var outputURL = plan.outputURL
-        if fm.fileExists(atPath: outputURL.path) {
-            let stem = outputURL.deletingPathExtension().lastPathComponent
-            let ext = outputURL.pathExtension
-            let directory = outputURL.deletingLastPathComponent()
-            var index = 2
-            var candidate = directory
-                .appendingPathComponent("\(stem)-\(index)")
-                .appendingPathExtension(ext)
-            while fm.fileExists(atPath: candidate.path) {
-                index += 1
-                candidate = directory
-                    .appendingPathComponent("\(stem)-\(index)")
-                    .appendingPathExtension(ext)
-            }
-            outputURL = candidate
-        }
 
         guard let session = AVAssetExportSession(
             asset: composition,
@@ -180,7 +206,7 @@ public enum CompositionEditor {
             throw EditorError.exportFailed("无法创建导出任务")
         }
         session.outputURL = outputURL
-        session.outputFileType = outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
+        session.outputFileType = fileType
         session.shouldOptimizeForNetworkUse = false
 
         let poller = Task.detached { [weak session] in
@@ -201,11 +227,9 @@ public enum CompositionEditor {
 
         switch session.status {
         case .completed:
-            let values = try? outputURL.resourceValues(forKeys: [.fileSizeKey])
-            let bytes = Double(values?.fileSize ?? 0)
             return Result(url: outputURL,
                           duration: plan.keptDuration,
-                          fileSizeMB: bytes / 1_048_576)
+                          fileSizeMB: fileSizeMB(of: outputURL))
         case .cancelled:
             // 取消/失败都会留下写了一半的封装文件，不清掉会在目录里积累垃圾
             // （同名自增序号机制不会覆盖它们，只会绕着走）
@@ -217,6 +241,29 @@ public enum CompositionEditor {
             try? fm.removeItem(at: outputURL)
             throw EditorError.exportFailed(message)
         }
+    }
+
+    /// 同名文件可能是用户上一次的裁剪成果，不能静默删除——自动追加序号
+    private static func uniqueOutputURL(_ url: URL) -> URL {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return url }
+        let stem = url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension
+        let directory = url.deletingLastPathComponent()
+        var index = 2
+        var candidate = directory.appendingPathComponent("\(stem)-\(index)")
+            .appendingPathExtension(ext)
+        while fm.fileExists(atPath: candidate.path) {
+            index += 1
+            candidate = directory.appendingPathComponent("\(stem)-\(index)")
+                .appendingPathExtension(ext)
+        }
+        return candidate
+    }
+
+    private static func fileSizeMB(of url: URL) -> Double {
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+        return Double(values?.fileSize ?? 0) / 1_048_576
     }
 
     /// 逐层展开底层错误（`-11800` 背后常是 `NSOSStatusErrorDomain -16341` 之类）

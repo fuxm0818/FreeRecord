@@ -144,7 +144,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let copy = iconButton("doc.on.doc", help: "复制路径", action: #selector(copyPath))
         let share = iconButton("square.and.arrow.up", help: "分享", action: #selector(shareFile))
         shareButton = share
-        let trim = iconButton("scissors", help: "裁剪（无损，不重新编码）", action: #selector(trimClicked))
+        let trim = iconButton("scissors", help: "裁剪（视频不重编码；音频重编码为 MP3）", action: #selector(trimClicked))
         let actions = NSStackView(views: [finder, trash, copy, share, trim])
         actions.orientation = .horizontal
         actions.spacing = 16

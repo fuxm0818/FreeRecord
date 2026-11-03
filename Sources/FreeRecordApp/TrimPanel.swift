@@ -4,9 +4,10 @@ import AppKit
 import FreeRecordCore
 
 /// 录制成品的裁剪窗：左侧播放器预览，右侧设定要保留 / 要删除的时间区间，
-/// 确认后用 `CompositionEditor` 无损导出（只转封装、不重编码）。
+/// 确认后用 `CompositionEditor` 导出。视频只转封装（零损耗）；
+/// 音频成品是 MP3，容器写不回原样，只能解码后重新编码。
 @MainActor
-final class TrimPanelController: NSObject, NSWindowDelegate {
+final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
 
     private enum Mode: Int {
         case keep = 0    // 只保留选中区间
@@ -26,6 +27,11 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
 
     private var url: URL?
     private var duration: Double = 0
+    /// 原片画面尺寸与音轨数：裁剪不改变这两项，导出后要原样回传给预览面板
+    private var sourceWidth = 0
+    private var sourceHeight = 0
+    private var sourceAudioTracks = 0
+    private var isAudio = false
     private var isExporting = false
     /// 会话代号：show() 递增，导出回调只认最新会话，
     /// 防止旧导出完成后把重新打开的新会话一起关掉
@@ -40,6 +46,10 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
 
         url = recording.url
         duration = recording.duration
+        sourceWidth = recording.width
+        sourceHeight = recording.height
+        sourceAudioTracks = recording.audioTrackCount
+        isAudio = HistoryItem.audioExtensions.contains(recording.url.pathExtension.lowercased())
         // 挂载播放器：预览是该窗口的核心交互（拖进度定位起止点）。
         // 漏了这一步的话窗口只会是黑屏 + 浮动控制条，用户只能盲填秒数
         let player = AVPlayer(url: recording.url)
@@ -47,12 +57,14 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
         playerView?.player = player
         startField?.stringValue = Self.timeText(0)
         endField?.stringValue = Self.timeText(recording.duration)
+        refreshDurations()
         hintLabel?.stringValue = ""
         isExporting = false
         exportGeneration += 1
         exportButton?.isEnabled = true
         exportButton?.title = "导出裁剪"
 
+        window.title = isAudio ? "裁剪录音" : "裁剪录制"
         window.centerOnActiveScreen()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -94,6 +106,8 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
         let endLabel = label("终点（秒）")
         let startField = numberField("0.0")
         let endField = numberField("0.0")
+        startField.delegate = self
+        endField.delegate = self
         self.startField = startField
         self.endField = endField
 
@@ -101,6 +115,8 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
         modePopup.addItems(withTitles: ["只保留选中区间", "删除选中区间"])
         modePopup.font = .systemFont(ofSize: 12)
         modePopup.toolTip = "选择裁剪方式"
+        modePopup.target = self
+        modePopup.action = #selector(trimInputsChanged)
         self.modePopup = modePopup
 
         let hint = label("")
@@ -149,6 +165,7 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
         panel.addSubview(endField)
         panel.addSubview(modePopup)
         panel.addSubview(infoStack)
+        panel.addSubview(hint)
         panel.addSubview(buttonRow)
 
         root.addSubview(backdrop)
@@ -193,6 +210,10 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
             infoStack.trailingAnchor.constraint(lessThanOrEqualTo: panel.trailingAnchor, constant: -18),
             infoStack.topAnchor.constraint(equalTo: modePopup.bottomAnchor, constant: 22),
 
+            hint.leadingAnchor.constraint(equalTo: startLabel.leadingAnchor),
+            hint.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -18),
+            hint.bottomAnchor.constraint(equalTo: buttonRow.topAnchor, constant: -14),
+
             buttonRow.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -18),
             buttonRow.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -18),
         ])
@@ -225,6 +246,32 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - 操作
 
+    /// 起止点输入与裁剪方式变动时，右栏时长要跟着算
+    @objc private func trimInputsChanged() {
+        refreshDurations()
+    }
+
+    nonisolated func controlTextDidChange(_ obj: Notification) {
+        Task { @MainActor in self.refreshDurations() }
+    }
+
+    /// 右栏两个时长随输入实时计算：它们一直显示「—」会让人以为裁剪功能没生效
+    private func refreshDurations() {
+        valueLabels["原片时长"]?.stringValue = Self.durationText(duration)
+        let range = clampedRange
+        let kept = modePopup?.indexOfSelectedItem == Mode.remove.rawValue
+            ? range.lo + max(0, duration - range.hi)
+            : range.hi - range.lo
+        valueLabels["裁剪后时长"]?.stringValue = Self.durationText(kept)
+    }
+
+    /// 输入框里的起止点，夹到 `[0, 原片时长]` 并保证终点不早于起点
+    private var clampedRange: (lo: Double, hi: Double) {
+        let lo = min(max(0, startField?.doubleValue ?? 0), duration)
+        let hi = max(lo, min(endField?.doubleValue ?? duration, duration))
+        return (lo, hi)
+    }
+
     @objc private func exportClicked() {
         guard !isExporting, let url else { return }
         guard duration > 0.001 else {
@@ -232,10 +279,7 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
             return
         }
 
-        let start = startField?.doubleValue ?? 0
-        let end = endField?.doubleValue ?? duration
-        let lo = min(max(0, start), duration)
-        let hi = max(lo, min(end, duration))
+        let (lo, hi) = clampedRange
 
         guard hi - lo > 0.05 else {
             hintLabel?.stringValue = "裁剪区间太短（至少 0.05 秒）"
@@ -254,25 +298,32 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
             keep = [CompositionEditor.Segment(start: lo, end: hi)]
         }
 
-        // 输出为 `<原文件名>-裁剪.<原后缀>`，与原片同目录
+        // 输出为 `<原文件名>-裁剪.<后缀>`，与原片同目录。
+        // 纯音频固定出 MP3（没有编码器时才留 .m4a），视频保持原容器
         let base = url.deletingPathExtension().lastPathComponent
+        let ext = isAudio
+            ? (Mp3Exporter.isAvailable ? "mp3" : "m4a")
+            : url.pathExtension
         let output = url.deletingLastPathComponent()
             .appendingPathComponent("\(base)-裁剪")
-            .appendingPathExtension(url.pathExtension)
+            .appendingPathExtension(ext)
 
         isExporting = true
         exportButton?.isEnabled = false
         exportButton?.title = "导出中…"
-        hintLabel?.stringValue = "正在无损导出…"
+        hintLabel?.stringValue = isAudio ? "正在导出…" : "正在无损导出…"
 
         let plan = CompositionEditor.Plan(
             sourceURL: url, keepSegments: keep, outputURL: output)
 
         let generation = exportGeneration
+        let audio = isAudio
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await CompositionEditor.export(plan: plan)
+                let result = audio
+                    ? try await CompositionEditor.exportAudio(plan: plan)
+                    : try await CompositionEditor.export(plan: plan)
                 guard generation == self.exportGeneration else { return }
                 await self.continueAfterExport(result: result)
             } catch {
@@ -291,10 +342,10 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
         onExported?(SavedRecording(
             url: result.url,
             duration: result.duration,
-            width: 0,
-            height: 0,
+            width: isAudio ? 0 : sourceWidth,
+            height: isAudio ? 0 : sourceHeight,
             fileSizeMB: result.fileSizeMB,
-            audioTrackCount: 0
+            audioTrackCount: isAudio ? 1 : sourceAudioTracks
         ))
         window?.performClose(nil)
     }
@@ -321,5 +372,9 @@ final class TrimPanelController: NSObject, NSWindowDelegate {
     /// 秒 → `12.3` 形式，供文本框直接读写
     private static func timeText(_ seconds: Double) -> String {
         String(format: "%.1f", seconds)
+    }
+
+    private static func durationText(_ seconds: Double) -> String {
+        String(format: "%.1f 秒", max(0, seconds))
     }
 }

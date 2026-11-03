@@ -45,9 +45,13 @@ public final class Mp3Exporter {
     public init() {}
 
     public func export(from source: URL, to destination: URL) async throws {
+        try await export(asset: AVURLAsset(url: source), to: destination)
+    }
+
+    /// 也接受已经排好时间轴的 `AVComposition`：裁剪音频时先拼 composition 再走这里编码
+    public func export(asset: AVAsset, to destination: URL) async throws {
         guard let encoder = Self.encoderURL else { throw ExportError.noEncoder }
 
-        let asset = AVURLAsset(url: source)
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         guard !tracks.isEmpty else { throw ExportError.noAudioTrack }
 

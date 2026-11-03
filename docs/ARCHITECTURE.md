@@ -23,7 +23,9 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
   两条轨由 `AVAssetReaderAudioMixOutput` 混成一条 —— MP3 容器只装得下一条音轨。
 - `RecordingCoordinator`（`Sources/FreeRecordApp/RecordingCoordinator.swift`）是唯一的状态机：`idle → recording ⇄ paused → finishing → idle`，负责创建 writer、启动采集、停止并收尾。界面上所有按钮最终都只调它。
 - **录制后的裁剪走 `CompositionEditor`（`Sources/FreeRecordCore/CompositionEditor.swift`）**：用 `AVMutableComposition`
-  按「要保留的区间」重排时间轴，再用 `AVAssetExportPresetPassthrough` 只转封装 —— **不重新编码**，画质无损。
+  按「要保留的区间」重排时间轴。视频用 `AVAssetExportPresetPassthrough` 只转封装 —— **不重新编码**，画质无损。
+  纯音频成品走 `exportAudio`：`.m4a` 仍能 passthrough，`.mp3` 容器 AVFoundation 写不出来，只能把同一条
+  composition 交给 `Mp3Exporter` 解码后重编码。时间轴重排两边共用 `makeComposition`。
   视频轨与每条音轨**必须同步处理**，否则音画错位（与 `RecordingWriter.makeRetimed` 同一套约束）。
 
 ## 界面构成（纯代码，无 storyboard/xib）
@@ -32,7 +34,7 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 
 交互范式：**先选范围，再在浮动工具条里调参数，点确认才开始**；选区层悬停即高亮窗口、单击录该窗口、拖拽框选区域、双击桌面录全屏、ESC 取消。
 
-## 新手最需要知道的 9 个实现点
+## 新手最需要知道的 10 个实现点
 
 1. **自己的 UI 不会进画面。** 靠两层保护，**缺一不可**（见 `ScreenCapture.ownHiddenWindows` 与各浮动面板的 `configureAsCaptureHiddenFloatingUI()`）：
    - `title = ScreenCapture.hiddenWindowTitle` + `SCContentFilter(display:excludingWindows:)` —— 只挡**自家** SCK 采集；
@@ -49,6 +51,7 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 7. **权限按签名身份记账。** 见 [PERMISSIONS.md](PERMISSIONS.md)：ad-hoc 签名每次构建都换 cdhash，屏幕录制授权会失效；本地开发请建一张自签证书（`scripts/create-signing-cert.sh`）。
 8. **MP3 只能靠 LAME，且它是子进程。** macOS 没有 MP3 编码器（`AVAssetWriter`、`AVAssetExportSession`、`ExtAudioFile`、`afconvert` 全都只解不编），`lame` 由 `scripts/build-mp3-encoder.sh` 从官方源码编成通用二进制放进 `Contents/Helpers/`，构建时先于 App 签名。三个约束：① 往子进程 stdin 写会因管道背压阻塞，读取-写入循环必须在后台线程；② 采样率要取自真正解出来的首包（`-s` 的单位是 kHz），写错整段成品变调又变速；③ 解码读不出连续 PCM、或包里没有编码器时必须报错/退回 .m4a 交付，不能静默丢音。
 9. **构建脚本别用本机表现当准。** 本机 `/bin/bash` 是 3.2，GitHub runner 上是 Homebrew 的 bash 5.2：5.2 在 UTF-8 locale 下会把紧跟变量的全角标点字节算进变量名，`echo "$ARCH）"` 直接 `unbound variable` 中断；更糟的是 `trap 'rm -rf "$WORK"' EXIT` 里最后一条命令成功会把退出码压回 0，父脚本的 `set -e` 于是拦不住，CI 全绿但包里没有编码器。约定：中文里的变量一律写 `${VAR}`；EXIT trap 用 `st=$?; …; exit $st`；打包方只认产物不认退出码（`build.sh` 断言 `Helpers/lame` 存在且双架构，CI 的「校验成品」再断一次）。
+10. **LSUIElement App 默认不装主菜单，⌘Q 是死的。** `NSApp.mainMenu` 为 nil 时菜单条没有本 App 的菜单，退出 / 复制粘贴 / 关窗这些系统级键位全部没人接。`AppDelegate.installMainMenu()` 手建 App、编辑、窗口三份菜单：系统动作（`terminate:`、`copy:`、`performClose:`）留空 target 交给响应链，只有自家动作（设置…）绑 `self`。App 形态由 `refreshAppActivationPolicy()`（同文件）**单点**判定 —— 有可见的 titled 窗口就是 `.regular`（出 Dock 图标、菜单条显示本 App），只剩选区层与浮动工具条时退回 `.accessory`；状态栏窗口和这些浮层都是 borderless，不会被误判成 titled。实测 `.accessory` 且本 App 是当前应用时主菜单键位仍然生效，所以录制期间另加「忙」判定（`isCaptureSessionBusy`）保持不抢菜单条。**新窗口不要再自己调 `setActivationPolicy`**，几个窗口各自来回切会互相打架。
 
 ## 关键约定
 

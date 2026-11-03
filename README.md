@@ -121,7 +121,7 @@ DRM 保护内容（部分播放器、私密窗口）会返回黑屏；另一种�
 
 - 日常开发在 `develop` 分支，验证通过后合并 `main`；`main` 上打 `v*` tag 会由 CI 自动发布 Release。
 - Bug 与功能请求欢迎开 Issue，改动请提 PR，先读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 新手友好标签：内核和 UI 的边界很清楚，`docs/ARCHITECTURE.md` 里列了 9 个最容易踩的实现坑。
+- 新手友好标签：内核和 UI 的边界很清楚，`docs/ARCHITECTURE.md` 里列了 10 个最容易踩的实现坑。
 
 ## 许可与声明
 

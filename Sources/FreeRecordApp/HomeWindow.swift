@@ -255,7 +255,7 @@ final class HomeWindowController: NSObject, NSWindowDelegate {
         viewModel.history.updateDirectory(AppSettings.shared.saveDirectory)
         viewModel.history.reload()
         window?.makeKeyAndOrderFront(nil)
-        NSApp.setActivationPolicy(.regular)
+        refreshAppActivationPolicy()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -266,12 +266,12 @@ final class HomeWindowController: NSObject, NSWindowDelegate {
     /// 开始录屏前先收起主窗口，避免把自己录进去
     func hide() {
         window?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        refreshAppActivationPolicy()
     }
 
     nonisolated func windowWillClose(_ notification: Notification) {
         Task { @MainActor in
-            NSApp.setActivationPolicy(.accessory)
+            refreshAppActivationPolicy()
         }
     }
 

@@ -15,6 +15,20 @@ final class AppMain {
     }
 }
 
+/// App 形态的唯一判定处：有可见的普通窗口才算正常 App（有 Dock 图标、有系统菜单，
+/// ⌘Q/⌘C/⌘W 这类键位才生效）；只剩选区层和浮动工具条时退回菜单栏常驻形态。
+/// 各处不要再自己调 setActivationPolicy，否则几个窗口来回切会互相打架。
+@MainActor
+func refreshAppActivationPolicy() {
+    let busy = (NSApp.delegate as? AppDelegate)?.isCaptureSessionBusy ?? false
+    let hasPanel = !busy && NSApp.windows.contains {
+        $0.isVisible && $0.styleMask.contains(.titled)
+    }
+    let target: NSApplication.ActivationPolicy = hasPanel ? .regular : .accessory
+    guard NSApp.activationPolicy() != target else { return }
+    NSApp.setActivationPolicy(target)
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDelegate {
     private var statusItem: NSStatusItem?
@@ -57,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyModernIconIfNeeded()
+        installMainMenu()
         coordinator.delegate = self
         coordinator.saveDirectory = settings.saveDirectory
 
@@ -65,7 +80,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in await self.coordinator.retryPendingStartIfReady() }
+            Task { @MainActor in
+                refreshAppActivationPolicy()
+                await self.coordinator.retryPendingStartIfReady()
+            }
+        }
+
+        // 窗口开合会改变 App 形态（有普通窗口才有系统菜单和 Dock 图标），统一在这里复查
+        for name: NSNotification.Name in [NSWindow.didBecomeKeyNotification, NSWindow.willCloseNotification] {
+            NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { _ in
+                Task { @MainActor in refreshAppActivationPolicy() }
+            }
         }
 
         controlBar.onStop = { [weak self] in self?.coordinator.stop() }
@@ -252,7 +279,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         NSApp.applicationIconImage = icon
     }
 
-    // MARK: - 菜单
+    // MARK: - 系统主菜单
+
+    /// LSUIElement App 默认不装主菜单，结果是 ⌘Q 退出、⌘C/⌘V 复制粘贴、⌘W 关窗
+    /// 这些系统级键位全部没人接。补一份标准菜单：系统动作留空 target 走响应链，
+    /// 只有自家动作（设置…）绑到 self。
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appItem = mainMenu.addItem(withTitle: "自由录屏", action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: "自由录屏")
+        appItem.submenu = appMenu
+        appMenu.addItem(withTitle: "关于 自由录屏",
+                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                        keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let settingsItem = appMenu.addItem(withTitle: "设置…",
+                                           action: #selector(showSettings),
+                                           keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(.separator())
+        let servicesItem = appMenu.addItem(withTitle: "服务", action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: "服务")
+        servicesItem.submenu = servicesMenu
+        NSApp.servicesMenu = servicesMenu
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "隐藏 自由录屏",
+                        action: #selector(NSApplication.hide(_:)),
+                        keyEquivalent: "h")
+        let hideOthers = appMenu.addItem(withTitle: "隐藏其他",
+                                         action: #selector(NSApplication.hideOtherApplications(_:)),
+                                         keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "全部显示",
+                        action: #selector(NSApplication.unhideAllApplications(_:)),
+                        keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "退出 自由录屏",
+                        action: #selector(NSApplication.terminate(_:)),
+                        keyEquivalent: "q")
+
+        let editItem = mainMenu.addItem(withTitle: "编辑", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "编辑")
+        editItem.submenu = editMenu
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let windowItem = mainMenu.addItem(withTitle: "窗口", action: nil, keyEquivalent: "")
+        let windowMenu = NSMenu(title: "窗口")
+        windowItem.submenu = windowMenu
+        windowMenu.addItem(withTitle: "最小化",
+                           action: #selector(NSWindow.performMiniaturize(_:)),
+                           keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "关闭窗口",
+                           action: #selector(NSWindow.performClose(_:)),
+                           keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "全部置于前台",
+                           action: #selector(NSApplication.arrangeInFront(_:)),
+                           keyEquivalent: "")
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    /// 录制（含正在等权限门控）期间必须保持"没有 Dock 图标、不占系统菜单"的形态，
+    /// 否则弹窗把 App 提成前台会把 Dock 和菜单一起拍进画面
+    var isCaptureSessionBusy: Bool {
+        coordinator.state != .idle || coordinator.isPreparing
+    }
+
+    // MARK: - 菜单栏状态项
 
     private func rebuildMenu() {
         guard let statusItem, statusItem.button != nil else { return }
