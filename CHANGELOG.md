@@ -12,6 +12,11 @@
   - 包内没有编码器（离线构建）或转码失败时，成品退回 `.m4a` 并提示，不会丢掉这次录音；`ALLOW_MISSING_MP3_ENCODER=1 bash scripts/build.sh` 可跳过 LAME 编译
   - 视频录制的封装与音轨不受影响，仍是 MP4 + 两条 AAC
 
+### 构建
+
+- **修复 CI 出包静默丢失 MP3 编码器**：脚本里 `"$ARCH）"` 这类「变量紧跟中文标点」在 GitHub runner 的 bash 5.2 下会把全角括号的字节算进变量名，报 `unbound variable` 中断；而 `trap ... EXIT` 里最后一条命令成功又把退出码压回 0，于是 `build.sh` 继续打包，发出一个不含 `Contents/Helpers/lame` 的包（v1.1.0 首次发布就是这个包），CI 却全绿。现在：所有脚本紧跟中文的变量一律加花括号；EXIT trap 先存 `$?` 再清理再 `exit`；`build.sh` 只认产物不认退出码（编码器与许可文本必须存在且是 arm64+x86_64，打包后再断言包内有 `Helpers/lame`，否则终止出包）；CI 增加「校验成品」步骤，缺编码器就不进入发布
+- `Mp3Exporter` 用 `@unchecked Sendable` 的任务结构承载 `AVAssetReader`，消掉 Swift 6 工具链下后台闭包的捕获告警
+
 ## [1.0.8] - 2026-11-01
 
 ### 修复

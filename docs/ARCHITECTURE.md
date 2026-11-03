@@ -32,7 +32,7 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 
 交互范式：**先选范围，再在浮动工具条里调参数，点确认才开始**；选区层悬停即高亮窗口、单击录该窗口、拖拽框选区域、双击桌面录全屏、ESC 取消。
 
-## 新手最需要知道的 8 个实现点
+## 新手最需要知道的 9 个实现点
 
 1. **自己的 UI 不会进画面。** 靠两层保护，**缺一不可**（见 `ScreenCapture.ownHiddenWindows` 与各浮动面板的 `configureAsCaptureHiddenFloatingUI()`）：
    - `title = ScreenCapture.hiddenWindowTitle` + `SCContentFilter(display:excludingWindows:)` —— 只挡**自家** SCK 采集；
@@ -48,6 +48,7 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 6. **三套坐标系。** AppKit 屏幕坐标（左下原点）↔ CoreGraphics/显示器坐标（左上原点）↔ 像素（× `backingScaleFactor`）。区域录制在 `AppMain.prepareRegionTarget` / `beginConfirmedRecording` 里来回换算，写反就会出现"录到的区域上下颠倒/偏移"。
 7. **权限按签名身份记账。** 见 [PERMISSIONS.md](PERMISSIONS.md)：ad-hoc 签名每次构建都换 cdhash，屏幕录制授权会失效；本地开发请建一张自签证书（`scripts/create-signing-cert.sh`）。
 8. **MP3 只能靠 LAME，且它是子进程。** macOS 没有 MP3 编码器（`AVAssetWriter`、`AVAssetExportSession`、`ExtAudioFile`、`afconvert` 全都只解不编），`lame` 由 `scripts/build-mp3-encoder.sh` 从官方源码编成通用二进制放进 `Contents/Helpers/`，构建时先于 App 签名。三个约束：① 往子进程 stdin 写会因管道背压阻塞，读取-写入循环必须在后台线程；② 采样率要取自真正解出来的首包（`-s` 的单位是 kHz），写错整段成品变调又变速；③ 解码读不出连续 PCM、或包里没有编码器时必须报错/退回 .m4a 交付，不能静默丢音。
+9. **构建脚本别用本机表现当准。** 本机 `/bin/bash` 是 3.2，GitHub runner 上是 Homebrew 的 bash 5.2：5.2 在 UTF-8 locale 下会把紧跟变量的全角标点字节算进变量名，`echo "$ARCH）"` 直接 `unbound variable` 中断；更糟的是 `trap 'rm -rf "$WORK"' EXIT` 里最后一条命令成功会把退出码压回 0，父脚本的 `set -e` 于是拦不住，CI 全绿但包里没有编码器。约定：中文里的变量一律写 `${VAR}`；EXIT trap 用 `st=$?; …; exit $st`；打包方只认产物不认退出码（`build.sh` 断言 `Helpers/lame` 存在且双架构，CI 的「校验成品」再断一次）。
 
 ## 关键约定
 
