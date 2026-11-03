@@ -25,7 +25,7 @@ final class SettingsPanelController {
             let hosting = NSHostingController(rootView: root)
             let window = NSWindow(contentViewController: hosting)
             window.styleMask = [.titled, .closable]
-            window.title = "设置"
+            window.title = L("设置")
             window.isReleasedWhenClosed = false
             self.window = window
         }
@@ -49,7 +49,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 Text("保存位置")
-                    .frame(width: 72, alignment: .leading)
+                    // 「Save location」比「保存位置」宽，72 在英文下会被截断
+                    .frame(width: 92, alignment: .leading)
                     .foregroundColor(.secondary)
                 Text(settings.saveDirectory.path)
                     .font(.caption)

@@ -81,10 +81,10 @@ public final class CameraPiPCapture: NSObject, AVCaptureVideoDataOutputSampleBuf
 
         public var errorDescription: String? {
             switch self {
-            case .permissionDenied: return "没有摄像头权限"
-            case .noCamera: return "没有找到可用的摄像头"
-            case .cannotAddInput: return "摄像头无法接入采集会话"
-            case .cannotAddOutput: return "摄像头数据输出不可用"
+            case .permissionDenied: return L("没有摄像头权限")
+            case .noCamera: return L("没有找到可用的摄像头")
+            case .cannotAddInput: return L("摄像头无法接入采集会话")
+            case .cannotAddOutput: return L("摄像头数据输出不可用")
             }
         }
     }

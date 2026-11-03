@@ -1,0 +1,5 @@
+/* 中文系统的 App 名称与权限文案，显式写一份，避免只有 en.lproj 时系统去挑英文。 */
+CFBundleDisplayName = "自由录屏";
+NSCameraUsageDescription = "自由录屏需要使用摄像头来录制您的画面。";
+NSMicrophoneUsageDescription = "自由录屏需要使用麦克风来录制您选择的声音来源。";
+NSScreenCaptureUsageDescription = "自由录屏需要录制您选择的屏幕区域。";

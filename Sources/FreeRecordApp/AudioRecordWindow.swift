@@ -74,7 +74,7 @@ final class AudioRecordWindowController {
     }
 
     private func build(settings: AppSettings) {
-        let width: CGFloat = 420
+        var width: CGFloat = 420
         let height: CGFloat = 168
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -91,7 +91,7 @@ final class AudioRecordWindowController {
         background.autoresizingMask = [.width, .height]
         container.addSubview(background)
 
-        let title = NSTextField(labelWithString: "录制音频")
+        let title = NSTextField(labelWithString: L("录制音频"))
         title.font = .systemFont(ofSize: 14, weight: .semibold)
         title.textColor = .white
 
@@ -101,7 +101,7 @@ final class AudioRecordWindowController {
         timerLabel = timeLabel
 
         let close = NSButton(
-            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "关闭") ?? NSImage(),
+            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L("关闭")) ?? NSImage(),
             target: self,
             action: #selector(closeClicked)
         )
@@ -122,29 +122,29 @@ final class AudioRecordWindowController {
 
         // 自绘开关：开/关轨道色固定（绿/暗），不随系统强调色变成「开合同色」
         let micSwitch = StatefulSwitch()
-        micSwitch.accessibilityLabelText = "麦克风"
+        micSwitch.accessibilityLabelText = L("麦克风")
         micSwitch.onToggle = { [weak self] _ in self?.switchChanged() }
         let systemSwitch = StatefulSwitch()
-        systemSwitch.accessibilityLabelText = "系统声音"
+        systemSwitch.accessibilityLabelText = L("系统声音")
         systemSwitch.onToggle = { [weak self] _ in self?.switchChanged() }
         self.micSwitch = micSwitch
         self.systemSwitch = systemSwitch
 
-        let micLabel = NSTextField(labelWithString: "麦克风")
-        let systemLabel = NSTextField(labelWithString: settings.supportsSystemAudio ? "系统声音" : "系统声音(BlackHole)")
+        let micLabel = NSTextField(labelWithString: L("麦克风"))
+        let systemLabel = NSTextField(labelWithString: settings.supportsSystemAudio ? L("系统声音") : L("系统声音(BlackHole)"))
         for label in [micLabel, systemLabel] {
             label.font = .systemFont(ofSize: 12)
             label.textColor = NSColor.white.withAlphaComponent(0.85)
         }
         systemSwitch.isEnabled = settings.canCaptureSystemAudio
 
-        let start = NSButton(title: "开始录制", target: self, action: #selector(startClicked))
+        let start = NSButton(title: L("开始录制"), target: self, action: #selector(startClicked))
         start.bezelStyle = .rounded
         start.controlSize = .large
         start.contentTintColor = .systemRed
         startButton = start
 
-        let pause = NSButton(title: "暂停", target: self, action: #selector(pauseClicked))
+        let pause = NSButton(title: L("暂停"), target: self, action: #selector(pauseClicked))
         pause.bezelStyle = .rounded
         pause.controlSize = .large
         pause.isHidden = true
@@ -154,6 +154,8 @@ final class AudioRecordWindowController {
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = NSColor.white.withAlphaComponent(0.55)
         hint.lineBreakMode = .byTruncatingTail
+        // 这一行里只有状态提示可以让位：语言切换后按钮更宽，宁可截尾也别把按键挤出面板
+        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         hintLabel = hint
 
         let controlsRow = NSStackView(views: [micSwitch, micLabel, systemSwitch, systemLabel, NSView(), hint, pause, start])
@@ -179,6 +181,23 @@ final class AudioRecordWindowController {
         ])
 
         panel.contentView = container
+        // 定宽按本地化后的实测来取三种排布里最宽的一次：英文整行比中文宽 100 多点，
+        // 沿用写死的 420 会把「Stop and Save」挤出无边框面板
+        func widestRow(hintText: String, showPause: Bool, startTitle: String) -> CGFloat {
+            hint.stringValue = hintText
+            pause.isHidden = !showPause
+            start.title = startTitle
+            container.layoutSubtreeIfNeeded()
+            return ceil(controlsRow.fittingSize.width)
+        }
+        var needed = widestRow(hintText: "", showPause: false, startTitle: L("开始录制"))
+        needed = max(needed, widestRow(hintText: L("正在录制"), showPause: true, startTitle: L("停止并保存")))
+        needed = max(needed, widestRow(hintText: L("正在启动声音采集…"), showPause: false, startTitle: L("准备中…")))
+        hint.stringValue = ""
+        pause.isHidden = true
+        start.title = L("开始录制")
+        width = max(width, needed + 20 + 16)
+        panel.setContentSize(NSSize(width: width, height: height))
         self.panel = panel
     }
 
@@ -197,13 +216,13 @@ final class AudioRecordWindowController {
         micSwitch?.isEnabled = !recording && !preparing
         systemSwitch?.isEnabled = !recording && !preparing && AppSettings.shared.canCaptureSystemAudio
         pauseButton?.isHidden = !recording
-        startButton?.title = recording ? "停止并保存" : (preparing ? "准备中…" : "开始录制")
+        startButton?.title = recording ? L("停止并保存") : (preparing ? L("准备中…") : L("开始录制"))
         startButton?.isEnabled = recording || (!preparing && (micSwitch?.isOn == true || systemSwitch?.isOn == true))
         startButton?.contentTintColor = .systemRed
-        pauseButton?.title = paused ? "继续" : "暂停"
+        pauseButton?.title = paused ? L("继续") : L("暂停")
         hintLabel?.stringValue = recording
-            ? (paused ? "已暂停" : "正在录制")
-            : (preparing ? "正在启动声音采集…" : "")
+            ? (paused ? L("已暂停") : L("正在录制"))
+            : (preparing ? L("正在启动声音采集…") : "")
         timerLabel?.textColor = paused ? .systemYellow : .white
         updateTime()
     }

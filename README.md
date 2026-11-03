@@ -27,6 +27,7 @@ macOS 上顺手录一段屏，常常卡在三件事：商业软件带水印或�
 - **音频输出**：纯录音模式直接出 **MP3**（192 kbps CBR / 48 kHz 立体声，麦克风与系统声音自动混成一条）。macOS 只提供 MP3 解码、没有 MP3 编码器，所以这一步由随包内嵌的 LAME 完成
 - **分辨率与帧率**：原始 / 1080P / 720P，15 / 30 / 60 fps
 - 摄像头录制、纯录音模式、录制完成预览、开机自启
+- **界面跟随系统语言**：中文系统显示「自由录屏」与中文界面，英文系统显示 FreeRecord 与英文界面（App 名、授权弹窗、菜单、窗口、提示与告警全覆盖）
 - **零遥测**：不联网、不上传，文件只落在你选的目录（默认 `~/Movies/自由录屏`）
 
 ## 系统要求
@@ -121,7 +122,7 @@ DRM 保护内容（部分播放器、私密窗口）会返回黑屏；另一种�
 
 - 日常开发在 `develop` 分支，验证通过后合并 `main`；`main` 上打 `v*` tag 会由 CI 自动发布 Release。
 - Bug 与功能请求欢迎开 Issue，改动请提 PR，先读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 新手友好标签：内核和 UI 的边界很清楚，`docs/ARCHITECTURE.md` 里列了 10 个最容易踩的实现坑。
+- 新手友好标签：内核和 UI 的边界很清楚，`docs/ARCHITECTURE.md` 里列了 12 个最容易踩的实现坑。
 
 ## 许可与声明
 
@@ -139,4 +140,4 @@ DRM 保护内容（部分播放器、私密窗口）会返回黑屏；另一种�
 
 FreeRecord is a free, open-source, watermark-free screen recorder for macOS 12.3+ (universal binary: Apple Silicon + Intel). It captures the full screen, a single window, or a draggable region, with four audio choices — none, microphone, system audio, or both on separate tracks. It lives in the menu bar with a floating control bar, offers a countdown, click highlight, hotkeys (<kbd>⌥⌘R</kbd> / <kbd>⌥⌘P</kbd>), and writes fragmented H.264 MP4 so a crash never loses recorded content. Audio-only mode exports **MP3** (192 kbps CBR, 48 kHz).
 
-No third-party libraries are linked in: Swift + ScreenCaptureKit + AVFoundation only. Since macOS ships an MP3 decoder but no encoder, MP3 output runs LAME — compiled from official source by the build script and shipped as a separate helper binary (LGPL). Build with `bash scripts/build.sh`, package with `bash scripts/make-dmg.sh`. Current releases are ad-hoc/self-signed, so first launch needs right-click → Open; system audio on macOS 12 requires the free BlackHole virtual sound card. Zero telemetry. MIT licensed.
+No third-party libraries are linked in: Swift + ScreenCaptureKit + AVFoundation only. Since macOS ships an MP3 decoder but no encoder, MP3 output runs LAME — compiled from official source by the build script and shipped as a separate helper binary (LGPL). Build with `bash scripts/build.sh`, package with `bash scripts/make-dmg.sh`. Current releases are ad-hoc/self-signed, so first launch needs right-click → Open; system audio on macOS 12 requires the free BlackHole virtual sound card. The interface follows the system language — Chinese on zh-Hans, English on English systems, including the app name and the permission prompts. Zero telemetry. MIT licensed.

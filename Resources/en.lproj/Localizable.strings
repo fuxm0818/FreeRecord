@@ -1,0 +1,292 @@
+/*
+  FreeRecord — English strings.
+
+  The Chinese literal is the key: a missing entry falls back to Chinese rather than
+  blanking the UI, so this file only needs the English side. Keys containing %@, %d,
+  %lld, %.1f are format strings — keep every specifier in the value.
+  Keys with a leading space or a trailing “…” must match exactly.
+*/
+
+/* MARK: - App name and menu bar */
+
+"自由录屏" = "FreeRecord";
+"%@ · 准备就绪" = "%@ · Ready";
+"录制中 %@" = "Recording %@";
+"已暂停 %@" = "Paused %@";
+"录屏过程中系统不会进入睡眠模式" = "The system stays awake while recording";
+"即将开始录制" = "About to start recording";
+"录制中" = "Recording";
+"已暂停" = "Paused";
+"打开主界面" = "Open Main Window";
+"屏幕录制" = "Screen Recording";
+"录制音频…" = "Record Audio…";
+"摄像头录制…" = "Camera Recording…";
+"停止并保存" = "Stop and Save";
+"停止录制" = "Stop Recording";
+"取消录制" = "Cancel Recording";
+"设置…" = "Settings…";
+"关于 %@" = "About %@";
+"设置" = "Settings";
+"服务" = "Services";
+"隐藏 %@" = "Hide %@";
+"隐藏其他" = "Hide Others";
+"全部显示" = "Show All";
+"退出 %@" = "Quit %@";
+"编辑" = "Edit";
+"撤销" = "Undo";
+"重做" = "Redo";
+"剪切" = "Cut";
+"拷贝" = "Copy";
+"粘贴" = "Paste";
+"全选" = "Select All";
+"窗口" = "Window";
+"最小化" = "Minimize";
+"关闭窗口" = "Close Window";
+"全部置于前台" = "Bring All to Front";
+"%@ 正在录制" = "%@ is recording";
+
+/* MARK: - Main window */
+
+"尚未获得「屏幕录制」权限" = "Screen Recording permission is missing";
+"去授权" = "Grant Access";
+"重新检查" = "Check Again";
+"在 系统设置 → 隐私与安全性 → 屏幕与系统音频录制 中打开「自由录屏」，然后完全退出本 App 再打开（关窗口不算退出，它常驻菜单栏）。App 重新打包后旧授权会失效，可点「重置授权记录」重新授权。" = "Turn on FreeRecord in System Settings → Privacy & Security → Screen & System Audio Recording, then quit this app completely and open it again (closing the window doesn’t quit it — it lives in the menu bar). Rebuilding the app invalidates the old grant; use Reset Permission Record… to grant it again.";
+"重置授权记录…" = "Reset Permission Record…";
+"录制" = "Recording";
+"摄像头" = "Camera";
+"录音" = "Audio";
+"录制列表" = "Recordings";
+"无视频" = "No video";
+"录制的视频会出现在这里" = "Recorded videos appear here";
+"播放" = "Play";
+"打开" = "Open";
+"重命名…" = "Rename…";
+"重命名" = "Rename";
+"只改名，扩展名保持不变。" = "Only the name changes — the extension stays.";
+"在 Finder 中显示" = "Show in Finder";
+"复制路径" = "Copy Path";
+"删除" = "Delete";
+"分享" = "Share";
+"删除这个文件吗？" = "Delete this file?";
+"文件名不能为空" = "The file name can’t be empty";
+"已有同名文件" = "A file with that name already exists";
+"重命名失败" = "Rename failed";
+"重命名失败：%@" = "Rename failed: %@";
+
+/* MARK: - Recording controls */
+
+"开始录制" = "Start Recording";
+"暂停" = "Pause";
+"继续" = "Resume";
+"暂停录制" = "Pause Recording";
+"继续录制" = "Resume Recording";
+"停止录制并保存" = "Stop recording and save";
+" 停止" = " Stop";
+"录制时长" = "Recording length";
+"截图" = "Screenshot";
+"截图（保存到录制目录）" = "Screenshot (saved to the recording folder)";
+"截图已保存" = "Screenshot saved";
+"截图失败" = "Screenshot failed";
+"静音麦克风" = "Mute Microphone";
+"取消静音" = "Unmute";
+"静音" = "Mute";
+"麦克风" = "Microphone";
+"系统声音" = "System Audio";
+"系统声音(BlackHole)" = "System Audio (BlackHole)";
+"摄像头画中画" = "Camera Overlay";
+"开启摄像头画中画" = "Show camera overlay";
+"关闭摄像头画中画" = "Hide camera overlay";
+"原始分辨率" = "Native resolution";
+"录制分辨率" = "Recording size";
+"宽度（像素）" = "Width (pixels)";
+"高度（像素）" = "Height (pixels)";
+"宽高无效：请输入 16 以上的整数。" = "Invalid size: enter whole numbers of 16 or more.";
+"全屏" = "Entire Screen";
+"窗口…" = "Window…";
+"区域…" = "Selection…";
+"单击录制窗口 · 拖拽框选区域 · 双击桌面录全屏 · ESC 取消" = "Click a window to record it · drag to select an area · double-click the desktop for the whole screen · ESC to cancel";
+"正在识别窗口…" = "Finding windows…";
+"录制中  %lld × %lld" = "Recording  %lld × %lld";
+"开始/停止 ⌥⌘R   暂停 ⌥⌘P" = "Start/Stop ⌥⌘R   Pause ⌥⌘P";
+"%lld 秒后开始" = "Starting in %lld s";
+"准备中…" = "Preparing…";
+"正在启动声音采集…" = "Starting audio capture…";
+"正在录制" = "Recording";
+"保存中…" = "Saving…";
+"录制完成" = "Recording complete";
+"录制音频" = "Record Audio";
+"录制音频至少要选择麦克风或系统声音。" = "Choose at least Microphone or System Audio to record sound.";
+"没有选择声音来源" = "No audio source selected";
+"鼠标点击高亮（黄色圆圈）" = "Highlight mouse clicks (yellow circle)";
+"点击高亮" = "Click highlight";
+"在录制画面中显示鼠标指针" = "Show the pointer in recordings";
+"开始前 3 秒倒计时" = "3-second countdown before recording";
+"录屏时显示摄像头画面" = "Show camera overlay while recording the screen";
+"拖动移动 · 拖四边四角或滚轮调整大小" = "Drag to move · drag an edge or corner, or scroll, to resize";
+"拖动预览小窗改位置，拖它的四条边、四个角或滚轮改大小；录制过程中也能随时调整，成片与预览一致。" = "Drag the preview window to move it; drag its edges or corners, or scroll, to resize. Adjust it any time during recording — the file matches the preview.";
+"画中画大小" = "Overlay size";
+
+/* MARK: - Preview panel */
+
+"文件大小" = "Size";
+"时长" = "Duration";
+"创建时间" = "Created";
+"分辨率" = "Resolution";
+"帧率" = "Frame rate";
+"格式" = "Format";
+"音频" = "Audio";
+"裁剪（视频不重编码；音频重编码为 MP3）" = "Trim (video without re-encoding; audio re-encoded to MP3)";
+
+/* MARK: - Trim panel */
+
+"裁剪录制" = "Trim Recording";
+"裁剪录音" = "Trim Audio";
+"起点（秒）" = "Start (s)";
+"终点（秒）" = "End (s)";
+"原片时长" = "Original";
+"裁剪后时长" = "Trimmed";
+"导出裁剪" = "Export Trim";
+"选择裁剪方式" = "Choose trim mode";
+"只保留选中区间" = "Keep selected range only";
+"删除选中区间" = "Delete selected range";
+"选择文件名、格式和保存位置" = "Choose a name, format and location";
+"导出中…" = "Exporting…";
+"正在无损导出…" = "Exporting without re-encoding…";
+"正在导出…" = "Exporting…";
+"正在保存…" = "Saving…";
+"保存" = "Save";
+"导出已取消" = "Export cancelled";
+"导出失败" = "Export failed";
+"导出失败：%@" = "Export failed: %@";
+"导出未完成（状态 %lld）" = "Export didn’t finish (status %lld)";
+"已导出：%.1f 秒 / %.1f MB" = "Exported: %.1f s / %.1f MB";
+"%.1f 秒" = "%.1f s";
+"裁剪区间太短（至少 0.05 秒）" = "Trim range too short (at least 0.05 s)";
+"裁剪后时长需比原片至少短 0.05 秒" = "The trimmed length must be at least 0.05 s shorter than the original";
+"没有选择要保留的片段" = "No segment selected to keep";
+"文件时长无效，无法裁剪" = "The file’s duration is unreadable, so it can’t be trimmed";
+"文件里没有可导出的音视频轨道" = "The file has no exportable video or audio track";
+"文件里没有音轨" = "The file has no audio track";
+"无法创建导出任务" = "Couldn’t create the export";
+"裁剪时间轴失败：%@" = "Couldn’t build the trimmed timeline: %@";
+
+/* MARK: - Settings */
+
+"保存位置" = "Save location";
+"选择…" = "Choose…";
+"停止录制后询问文件名和保存位置" = "Ask for file name and location after stopping";
+"启用全局快捷键（⌥⌘R 开始/停止 · ⌥⌘P 暂停）" = "Enable global shortcuts (⌥⌘R start/stop · ⌥⌘P pause)";
+"开机自动启动" = "Launch at login";
+"通用" = "General";
+"系统默认" = "System default";
+"左右镜像" = "Mirror horizontally";
+"系统声音可直接录制，无需额外设置。" = "System audio can be recorded directly — nothing to set up.";
+"已检测到 BlackHole：录屏时会把系统输出自动切到「自由录屏多输出」（扬声器 + BlackHole），停止后切回原来的输出设备。" = "BlackHole detected: while recording, system output switches to “自由录屏多输出” (speakers + BlackHole) and returns to your previous device when you stop.";
+"当前 macOS 版本需要 BlackHole 虚拟声卡才能录制系统声音。" = "This macOS version needs the BlackHole virtual sound card to record system audio.";
+"安装 BlackHole 虚拟声卡…" = "Install BlackHole…";
+"安装 BlackHole 虚拟声卡" = "Install the BlackHole virtual sound card";
+"创建多输出设备（边录边听）…" = "Create Multi-Output Device (listen while recording)…";
+"重建多输出设备…" = "Re-create Multi-Output Device…";
+"打开下载页" = "Open Downloads";
+
+/* MARK: - Permission dialogs */
+
+"本 App 暂时读不到「屏幕录制」权限" = "This app can’t read the Screen Recording permission right now";
+"如果系统设置里已经显示开启：关掉这个弹窗切回本 App 会自动重试；仍不行请点「重启 App」——App 重新打包后签名会变，旧授权随之失效，重启后在系统设置里关一次再开一次即可。\n\n如果还没开：点「打开系统设置」，在 隐私与安全性 → 屏幕与系统音频录制 里打开「自由录屏」，授权后切回本 App，录制会自动继续。" = "If System Settings already shows it enabled: dismiss this dialog and switch back to this app — it retries on its own. Still failing? Choose Restart App: rebuilding the app changes its signature and drops the old grant, so after restarting, toggle it off and on once in System Settings.\n\nIf it isn’t enabled yet: choose Open System Settings, then turn on FreeRecord under Privacy & Security → Screen & System Audio Recording. Switch back here and the recording continues by itself.";
+"打开系统设置" = "Open System Settings";
+"重启 App" = "Restart App";
+"取消" = "Cancel";
+"好" = "OK";
+"稍后" = "Later";
+"暂不" = "Not Now";
+"立即授权" = "Grant Now";
+"系统设置里已开启，但本 App 仍读不到权限" = "Enabled in System Settings, but this app still can’t read the permission";
+"常见原因只有两个：\n1. 授权只对新启动的进程生效——开关打开后，本 App 没有真正退出再打开（关窗口不算退出，它常驻在菜单栏）。\n2. App 重新打包或更新过，签名变化导致系统里那条旧授权失效，但开关看起来还是开着的。\n\n点「重启 App」可以解决第 1 种；重启后仍读不到，就点「重新授权…」重置这条记录，再打开开关。" = "Two things usually cause this:\n1. A grant only applies to newly started processes — after switching it on, this app wasn’t really quit and reopened (closing the window doesn’t quit it; it lives in the menu bar).\n2. The app was rebuilt or updated, so the changed signature invalidated the old grant, while the switch still looks on.\n\nRestart App fixes the first case. If the permission still can’t be read after restarting, choose Re-authorize… to reset this record, then switch it on again.";
+"重新授权…" = "Re-authorize…";
+"已重置屏幕录制授权记录" = "Reset the Screen Recording permission record";
+"接下来：\n1. 点击「打开系统设置」，在列表中找到「自由录屏」并打开开关\n2. 完全退出本 App（菜单栏图标 → 退出）后重新打开" = "Next:\n1. Choose Open System Settings, find FreeRecord in the list and switch it on\n2. Quit this app completely (menu bar icon → Quit) and open it again";
+"没有「屏幕录制」权限，无法选择录制范围。\n\n请在 系统设置 → 隐私与安全性 → 屏幕与系统音频录制 里授权，然后重新打开本 App。" = "Without Screen Recording permission you can’t choose what to record.\n\nAllow it in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen this app.";
+"没能读到屏幕信息，录制无法开始。\n\n请确认「屏幕录制」权限已授权；如果已经打开，去系统设置里关一次再打开「自由录屏」后重启 App。" = "The screen couldn’t be read, so recording can’t start.\n\nCheck that Screen Recording is allowed; if it’s already on, toggle FreeRecord off and on in System Settings, then restart the app.";
+"没有摄像头权限" = "No camera permission";
+"没有摄像头权限。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。" = "No camera permission.\n\nAllow access in System Settings → Privacy & Security → Camera, then try again.";
+"摄像头没能开启。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。" = "The camera couldn’t start.\n\nAllow access in System Settings → Privacy & Security → Camera, then try again.";
+"摄像头没能开启，本次将只录制屏幕。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。" = "The camera couldn’t start, so only the screen is recorded.\n\nAllow access in System Settings → Privacy & Security → Camera, then try again.";
+"没有麦克风权限。\n\n可以在 系统设置 → 隐私与安全性 → 麦克风 里授权，或改选其他声音来源。" = "No microphone permission.\n\nAllow it in System Settings → Privacy & Security → Microphone, or pick a different audio source.";
+"摄像头正在录制，请先停止摄像头录制。" = "The camera is recording. Stop it first.";
+"请先结束当前录制，再打开摄像头录制。" = "Finish the current recording before starting a camera recording.";
+
+/* MARK: - System audio setup */
+
+"没有检测到 BlackHole 虚拟声卡" = "BlackHole virtual sound card not found";
+"没有找到系统输出设备" = "No system output device found";
+"无法把系统输出切换到多输出设备" = "Couldn’t switch system output to the multi-output device";
+"创建多输出设备失败（错误码 %d）" = "Couldn’t create the multi-output device (error code %d)";
+"创建多输出设备失败：%@" = "Couldn’t create the multi-output device: %@";
+"多输出设备已存在" = "The multi-output device already exists";
+"已创建多输出设备" = "Multi-output device created";
+"切换输出" = "Switch output";
+"要把系统声音同时送到扬声器和录制轨道，需要把系统输出切到「自由录屏多输出」。现在切换吗？（之后可随时在 系统设置→声音 切回）" = "To send system audio to both the speakers and the recording, system output has to switch to “自由录屏多输出”. Switch now? (You can switch back any time in System Settings → Sound.)";
+"系统声音需 macOS 13 或 BlackHole" = "System audio needs macOS 13 or BlackHole";
+"在 macOS 12 上录制系统声音需要安装免费的 BlackHole 虚拟声卡（开源软件）。\n\n安装方式二选一：\n1. 用 Homebrew：brew install blackhole-2ch\n2. 从官网下载安装包\n\n安装完成后重新打开本 App，就能选「系统声音」了。" = "Recording system audio on macOS 12 needs the free BlackHole virtual sound card (open source).\n\nInstall it either way:\n1. With Homebrew: brew install blackhole-2ch\n2. From the project’s download page\n\nReopen this app afterwards, then System Audio becomes selectable.";
+
+/* MARK: - Capture and encode failures */
+
+"开始录制失败：%@" = "Couldn’t begin recording: %@";
+"启动录制失败：%@" = "Couldn’t start recording: %@";
+"麦克风启动失败：%@" = "Microphone failed to start: %@";
+"系统声音启动失败：%@" = "System audio failed to start: %@";
+"虚拟声卡（%@）启动失败：%@" = "The virtual sound card (%@) failed to start: %@";
+"摄像头启动失败：%@" = "Camera failed to start: %@";
+"采集中断：%@" = "Capture interrupted: %@";
+"系统声音采集中断：%@" = "System audio capture interrupted: %@";
+"采集中断，已保存已录部分。\n%@" = "Capture interrupted; what was recorded is saved.\n%@";
+"诊断已写入：%@" = "Diagnostics written to: %@";
+"开录几秒就失败通常是编码器扛不住当前分辨率/帧率，建议降到 1080p 或 30fps 再试。" = "Failing within a few seconds usually means the encoder can’t keep up with the current size and frame rate — try 1080p or 30 fps.";
+"编码器报错：%@" = "Encoder error: %@";
+"第 %lld 秒起编码器没有响应，已保存前 %lld 秒。\n建议重启 App 后再录。" = "The encoder stopped responding at second %lld, so the first %lld seconds were saved.\nRestart the app before recording again.";
+"保存失败：%@" = "Save failed: %@";
+"保存到所选位置失败" = "Couldn’t save to the selected location";
+"%@\n\n录制文件仍保留在原来的位置。" = "%@\n\nThe recording is still in its original location.";
+"无法创建文件：%@" = "Couldn’t create the file: %@";
+"无法开始写入" = "Couldn’t start writing";
+"写入未完成" = "Writing didn’t finish";
+"写入器未说明原因" = "The writer didn’t report a reason";
+"无法添加视频轨道" = "Couldn’t add the video track";
+"无法添加音频输入" = "Couldn’t add the audio input";
+"没有采集到任何数据" = "Nothing was captured";
+"没有找到可录制的显示器" = "No display available to record";
+"没有找到可用的摄像头" = "No usable camera found";
+"无法配置摄像头" = "Couldn’t configure the camera";
+"摄像头数据输出不可用" = "The camera offers no usable video output";
+"摄像头无法接入采集会话" = "The camera couldn’t be added to the capture session";
+"没有找到可用的麦克风" = "No usable microphone found";
+"没有找到可用的音频输入设备" = "No usable audio input device found";
+"底层：%@ (%@ %lld)" = "Caused by: %@ (%@ %lld)";
+
+/* MARK: - MP3 export */
+
+"找不到 MP3 编码器" = "MP3 encoder not found";
+"无法启动编码器" = "Couldn’t start the encoder";
+"读取音频失败：%@" = "Couldn’t read the audio: %@";
+"无法开始读取" = "Couldn’t start reading";
+"读取中断" = "Reading interrupted";
+"音频格式不支持" = "Audio format not supported";
+"解码出的音频格式不是 16 位交错 PCM" = "The decoded audio isn’t 16-bit interleaved PCM";
+"MP3 编码失败：%@" = "MP3 encoding failed: %@";
+"转 MP3 失败：%@，本次成品保存为 .m4a" = "MP3 conversion failed: %@, so this take was saved as .m4a";
+"没有可用的 MP3 编码器，本次成品保存为 .m4a" = "No MP3 encoder available, so this take was saved as .m4a";
+"退出码 %d" = "Exit code %d";
+
+/* MARK: - Switches and small labels */
+
+"开" = "On";
+"关" = "Off";
+"开关" = "Switch";
+/* MARK: - Floating window titles and remaining labels */
+
+"保存录制" = "Save Recording";
+"摄像头录制" = "Camera Recording";
+"关闭" = "Close";
+"完成" = "Done";
+"麦克风+系统声音" = "Microphone + System Audio";
+"系统声音没能接通：%@。\n\n可以在「设置 → 系统声音」里重新创建多输出设备，或先只录麦克风。" = "System audio couldn’t connect: %@.\n\nRe-create the multi-output device in Settings → System Audio, or record the microphone only for now.";

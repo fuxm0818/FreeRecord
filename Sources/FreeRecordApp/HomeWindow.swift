@@ -245,7 +245,7 @@ final class HomeWindowController: NSObject, NSWindowDelegate {
             ))
             let win = NSWindow(contentViewController: hosting)
             win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            win.title = "自由录屏"
+            win.title = appDisplayName
             win.isReleasedWhenClosed = false
             win.delegate = self
             win.setContentSize(NSSize(width: 420, height: 620))
@@ -283,17 +283,11 @@ final class HomeWindowController: NSObject, NSWindowDelegate {
             guard !granted else { return }
 
             let alert = NSAlert()
-            alert.messageText = "系统设置里已开启，但本 App 仍读不到权限"
-            alert.informativeText = """
-            常见原因只有两个：
-            1. 授权只对新启动的进程生效——开关打开后，本 App 没有真正退出再打开（关窗口不算退出，它常驻在菜单栏）。
-            2. App 重新打包或更新过，签名变化导致系统里那条旧授权失效，但开关看起来还是开着的。
-
-            点「重启 App」可以解决第 1 种；重启后仍读不到，就点「重新授权…」重置这条记录，再打开开关。
-            """
-            alert.addButton(withTitle: "重启 App")
-            alert.addButton(withTitle: "重新授权…")
-            alert.addButton(withTitle: "取消")
+            alert.messageText = L("系统设置里已开启，但本 App 仍读不到权限")
+            alert.informativeText = L("常见原因只有两个：\n1. 授权只对新启动的进程生效——开关打开后，本 App 没有真正退出再打开（关窗口不算退出，它常驻在菜单栏）。\n2. App 重新打包或更新过，签名变化导致系统里那条旧授权失效，但开关看起来还是开着的。\n\n点「重启 App」可以解决第 1 种；重启后仍读不到，就点「重新授权…」重置这条记录，再打开开关。")
+            alert.addButton(withTitle: L("重启 App"))
+            alert.addButton(withTitle: L("重新授权…"))
+            alert.addButton(withTitle: L("取消"))
             switch alert.runModal() {
             case .alertFirstButtonReturn:
                 relaunchApp()
@@ -328,14 +322,10 @@ final class HomeWindowController: NSObject, NSWindowDelegate {
             // 忽略：失败时用户仍可手动在系统设置中操作
         }
         let alert = NSAlert()
-        alert.messageText = "已重置屏幕录制授权记录"
-        alert.informativeText = """
-        接下来：
-        1. 点击「打开系统设置」，在列表中找到「自由录屏」并打开开关
-        2. 完全退出本 App（菜单栏图标 → 退出）后重新打开
-        """
-        alert.addButton(withTitle: "立即授权")
-        alert.addButton(withTitle: "稍后")
+        alert.messageText = L("已重置屏幕录制授权记录")
+        alert.informativeText = L("接下来：\n1. 点击「打开系统设置」，在列表中找到「自由录屏」并打开开关\n2. 完全退出本 App（菜单栏图标 → 退出）后重新打开")
+        alert.addButton(withTitle: L("立即授权"))
+        alert.addButton(withTitle: L("稍后"))
         if alert.runModal() == .alertFirstButtonReturn {
             Task.detached {
                 _ = CGRequestScreenCaptureAccess()
@@ -427,7 +417,7 @@ struct HomeView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text("自由录屏")
+            Text(appDisplayName)
                 .font(.title2.bold())
             Spacer()
             if viewModel.isRecording {
@@ -450,9 +440,9 @@ struct HomeView: View {
 
     private var recordingTitle: String {
         switch viewModel.recordingState {
-        case "paused": return "已暂停"
-        case "finishing": return "保存中…"
-        default: return "录制中"
+        case "paused": return L("已暂停")
+        case "finishing": return L("保存中…")
+        default: return L("录制中")
         }
     }
 
@@ -476,7 +466,7 @@ struct HomeView: View {
                 Image(systemName: icon)
                     .font(.system(size: 22))
                     .foregroundColor(selected ? .accentColor : .primary)
-                Text(title)
+                Text(L(title))
                     .font(.system(size: 12.5, weight: .medium))
             }
             .frame(maxWidth: .infinity)
@@ -640,7 +630,7 @@ struct HomeView: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { open(item) }
         .contextMenu {
-            Button(item.isScreenshot ? "打开" : "播放") { open(item) }
+            Button(item.isScreenshot ? L("打开") : L("播放")) { open(item) }
             Button("重命名…") { rename(item) }
             Divider()
             Button("在 Finder 中显示") {
@@ -676,7 +666,7 @@ struct HomeView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .help(L(help))
     }
 
     private func subtitle(_ item: HistoryItem) -> String {
@@ -690,10 +680,10 @@ struct HomeView: View {
 
     private func rename(_ item: HistoryItem) {
         let alert = NSAlert()
-        alert.messageText = "重命名"
-        alert.informativeText = "只改名，扩展名保持不变。"
-        alert.addButton(withTitle: "重命名")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("重命名")
+        alert.informativeText = L("只改名，扩展名保持不变。")
+        alert.addButton(withTitle: L("重命名"))
+        alert.addButton(withTitle: L("取消"))
         let field = NSTextField(string: item.name)
         field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
         alert.accessoryView = field
@@ -706,9 +696,9 @@ struct HomeView: View {
             .appendingPathExtension(item.url.pathExtension)
         guard !FileManager.default.fileExists(atPath: target.path) else {
             let warn = NSAlert()
-            warn.messageText = "已有同名文件"
+            warn.messageText = L("已有同名文件")
             warn.informativeText = target.lastPathComponent
-            warn.addButton(withTitle: "好")
+            warn.addButton(withTitle: L("好"))
             warn.runModal()
             return
         }
@@ -717,19 +707,19 @@ struct HomeView: View {
             viewModel.history.reload()
         } catch {
             let warn = NSAlert()
-            warn.messageText = "重命名失败"
+            warn.messageText = L("重命名失败")
             warn.informativeText = error.localizedDescription
-            warn.addButton(withTitle: "好")
+            warn.addButton(withTitle: L("好"))
             warn.runModal()
         }
     }
 
     private func delete(_ item: HistoryItem) {
         let alert = NSAlert()
-        alert.messageText = "删除这个文件吗？"
+        alert.messageText = L("删除这个文件吗？")
         alert.informativeText = item.name
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("删除"))
+        alert.addButton(withTitle: L("取消"))
         alert.buttons.first?.hasDestructiveAction = true
         if alert.runModal() == .alertFirstButtonReturn {
             try? FileManager.default.removeItem(at: item.url)
@@ -754,13 +744,13 @@ struct ShareButton: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSButton {
         let button = NSButton()
-        button.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "分享")
+        button.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: L("分享"))
         button.imageScaling = .scaleProportionallyDown
         button.isBordered = false
         button.contentTintColor = .secondaryLabelColor
         button.target = context.coordinator
         button.action = #selector(Coordinator.share(_:))
-        button.toolTip = "分享"
+        button.toolTip = L("分享")
         button.setFrameSize(NSSize(width: 18, height: 18))
         button.setContentHuggingPriority(.required, for: .horizontal)
         button.setContentHuggingPriority(.required, for: .vertical)

@@ -226,7 +226,7 @@ final class RegionOverlayView: NSView {
         } else if let highlight, highlight.width > 1, highlight.height > 1 {
             drawSelection(frame: highlight, label: highlightLabel, labelColor: .systemGreen, labelInverted: true)
         } else {
-            let text = loading ? "正在识别窗口…" : "单击录制窗口 · 拖拽框选区域 · 双击桌面录全屏 · ESC 取消"
+            let text = loading ? L("正在识别窗口…") : L("单击录制窗口 · 拖拽框选区域 · 双击桌面录全屏 · ESC 取消")
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 15, weight: .medium),
                 .foregroundColor: NSColor.white,
@@ -475,7 +475,7 @@ final class RegionFrameView: NSView {
         let size = regionSize.width > 0 ? regionSize : bounds.size
         let label = editable
             ? "\(Int(size.width)) × \(Int(size.height))"
-            : "录制中  \(Int(size.width)) × \(Int(size.height))"
+            : LF("录制中  %lld × %lld", Int(size.width), Int(size.height))
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: NSColor.white,

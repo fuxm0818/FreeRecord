@@ -18,7 +18,7 @@ public final class RecordingWriter {
         public var errorDescription: String? {
             switch self {
             case .setupFailed(let message): return message
-            case .noFrames: return "没有采集到任何数据"
+            case .noFrames: return L("没有采集到任何数据")
             case .finishFailed(let message): return message
             }
         }
@@ -152,7 +152,7 @@ public final class RecordingWriter {
     /// 纯音频录制（录制音频模式）的中间档，输出 .m4a；成品由 Mp3Exporter 转成 .mp3
     public convenience init(audioOnlyURL url: URL, hasMicTrack: Bool, hasSystemTrack: Bool) throws {
         guard hasMicTrack || hasSystemTrack else {
-            throw WriterError.setupFailed("没有选择声音来源")
+            throw WriterError.setupFailed(L("没有选择声音来源"))
         }
         try self.init(
             url: url,
@@ -184,7 +184,7 @@ public final class RecordingWriter {
         do {
             assetWriter = try AVAssetWriter(outputURL: url, fileType: fileType)
         } catch {
-            throw WriterError.setupFailed("无法创建文件：\(error.localizedDescription)")
+            throw WriterError.setupFailed(LF("无法创建文件：%@", error.localizedDescription))
         }
 
         var video: AVAssetWriterInput?
@@ -207,7 +207,7 @@ public final class RecordingWriter {
             ])
             input.expectsMediaDataInRealTime = true
             guard assetWriter.canAdd(input) else {
-                throw WriterError.setupFailed("无法添加视频轨道")
+                throw WriterError.setupFailed(L("无法添加视频轨道"))
             }
             assetWriter.add(input)
             video = input
@@ -236,7 +236,7 @@ public final class RecordingWriter {
         }
 
         guard assetWriter.startWriting() else {
-            throw WriterError.setupFailed(assetWriter.error?.localizedDescription ?? "无法开始写入")
+            throw WriterError.setupFailed(assetWriter.error?.localizedDescription ?? L("无法开始写入"))
         }
 
         self.writer = assetWriter
@@ -271,7 +271,7 @@ public final class RecordingWriter {
     /// 写入器自己报错时给出原因，供每帧巡检和看门狗使用
     public var failureDescription: String? {
         guard writer.status == .failed else { return nil }
-        return Self.describe(writer.error) ?? "写入器未说明原因"
+        return Self.describe(writer.error) ?? L("写入器未说明原因")
     }
 
     /// input 忙就 1ms 一步等（最多 10ms），
@@ -388,7 +388,7 @@ public final class RecordingWriter {
         }
 
         guard writer.status == .completed else {
-            throw WriterError.finishFailed(Self.describe(writer.error) ?? "写入未完成")
+            throw WriterError.finishFailed(Self.describe(writer.error) ?? L("写入未完成"))
         }
         return url
     }
@@ -396,18 +396,19 @@ public final class RecordingWriter {
     /// -11800 这类笼统错误真正的线索在底层错误里，逐层展开给用户看
     static func describe(_ error: Error?) -> String? {
         guard let nsError = error as NSError? else { return nil }
-        var parts = ["\(nsError.localizedDescription)（\(nsError.domain) \(nsError.code)）"]
+        // domain/code 与技术性括号对两种语言都中立，只有「底层：」需要查表
+        var parts = ["\(nsError.localizedDescription) (\(nsError.domain) \(nsError.code))"]
         if let reason = nsError.localizedFailureReason, !reason.isEmpty {
             parts.append(reason)
         }
         var underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
         var depth = 0
         while let current = underlying, depth < 3 {
-            parts.append("底层：\(current.localizedDescription)（\(current.domain) \(current.code)）")
+            parts.append(LF("底层：%@ (%@ %lld)", current.localizedDescription, current.domain, current.code))
             underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError
             depth += 1
         }
-        return parts.joined(separator: "；")
+        return parts.joined(separator: "; ")
     }
 
     private func beginFinishing() {

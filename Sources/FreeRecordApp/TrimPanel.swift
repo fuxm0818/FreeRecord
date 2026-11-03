@@ -62,9 +62,9 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
         isExporting = false
         exportGeneration += 1
         exportButton?.isEnabled = true
-        exportButton?.title = "导出裁剪"
+        exportButton?.title = L("导出裁剪")
 
-        window.title = isAudio ? "裁剪录音" : "裁剪录制"
+        window.title = isAudio ? L("裁剪录音") : L("裁剪录制")
         window.centerOnActiveScreen()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -80,7 +80,7 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
             backing: .buffered,
             defer: false
         )
-        window.title = "裁剪录制"
+        window.title = L("裁剪录制")
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.minSize = NSSize(width: 660, height: 420)
@@ -112,9 +112,9 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
         self.endField = endField
 
         let modePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        modePopup.addItems(withTitles: ["只保留选中区间", "删除选中区间"])
+        modePopup.addItems(withTitles: [L("只保留选中区间"), L("删除选中区间")])
         modePopup.font = .systemFont(ofSize: 12)
-        modePopup.toolTip = "选择裁剪方式"
+        modePopup.toolTip = L("选择裁剪方式")
         modePopup.target = self
         modePopup.action = #selector(trimInputsChanged)
         self.modePopup = modePopup
@@ -124,13 +124,13 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
         hint.font = .systemFont(ofSize: 10)
         hintLabel = hint
 
-        let export = NSButton(title: "导出裁剪", target: self, action: #selector(exportClicked))
+        let export = NSButton(title: L("导出裁剪"), target: self, action: #selector(exportClicked))
         export.bezelStyle = .rounded
         export.controlSize = .regular
         export.keyEquivalent = "\r"
         exportButton = export
 
-        let cancel = NSButton(title: "取消", target: self, action: #selector(cancelClicked))
+        let cancel = NSButton(title: L("取消"), target: self, action: #selector(cancelClicked))
         cancel.bezelStyle = .rounded
         cancel.controlSize = .regular
 
@@ -221,7 +221,7 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     }
 
     private func label(_ text: String) -> NSTextField {
-        let field = NSTextField(labelWithString: text)
+        let field = NSTextField(labelWithString: L(text))
         field.font = .systemFont(ofSize: 12)
         field.textColor = .secondaryLabelColor
         field.translatesAutoresizingMaskIntoConstraints = false
@@ -275,18 +275,18 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     @objc private func exportClicked() {
         guard !isExporting, let url else { return }
         guard duration > 0.001 else {
-            hintLabel?.stringValue = "文件时长无效，无法裁剪"
+            hintLabel?.stringValue = L("文件时长无效，无法裁剪")
             return
         }
 
         let (lo, hi) = clampedRange
 
         guard hi - lo > 0.05 else {
-            hintLabel?.stringValue = "裁剪区间太短（至少 0.05 秒）"
+            hintLabel?.stringValue = L("裁剪区间太短（至少 0.05 秒）")
             return
         }
         guard hi - lo < duration - 0.05 else {
-            hintLabel?.stringValue = "裁剪后时长需比原片至少短 0.05 秒"
+            hintLabel?.stringValue = L("裁剪后时长需比原片至少短 0.05 秒")
             return
         }
 
@@ -310,8 +310,8 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
 
         isExporting = true
         exportButton?.isEnabled = false
-        exportButton?.title = "导出中…"
-        hintLabel?.stringValue = isAudio ? "正在导出…" : "正在无损导出…"
+        exportButton?.title = L("导出中…")
+        hintLabel?.stringValue = isAudio ? L("正在导出…") : L("正在无损导出…")
 
         let plan = CompositionEditor.Plan(
             sourceURL: url, keepSegments: keep, outputURL: output)
@@ -336,9 +336,9 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     private func continueAfterExport(result: CompositionEditor.Result) {
         isExporting = false
         exportButton?.isEnabled = true
-        exportButton?.title = "导出裁剪"
-        hintLabel?.stringValue = String(
-            format: "已导出：%.1f 秒 / %.1f MB", result.duration, result.fileSizeMB)
+        exportButton?.title = L("导出裁剪")
+        hintLabel?.stringValue = LF(
+            "已导出：%.1f 秒 / %.1f MB", result.duration, result.fileSizeMB)
         onExported?(SavedRecording(
             url: result.url,
             duration: result.duration,
@@ -353,8 +353,8 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     private func failExport(message: String) {
         isExporting = false
         exportButton?.isEnabled = true
-        exportButton?.title = "导出裁剪"
-        hintLabel?.stringValue = "导出失败：\(message)"
+        exportButton?.title = L("导出裁剪")
+        hintLabel?.stringValue = LF("导出失败：%@", message)
     }
 
     @objc private func cancelClicked() {
@@ -375,6 +375,6 @@ final class TrimPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     }
 
     private static func durationText(_ seconds: Double) -> String {
-        String(format: "%.1f 秒", max(0, seconds))
+        LF("%.1f 秒", max(0, seconds))
     }
 }

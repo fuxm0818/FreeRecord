@@ -12,9 +12,9 @@ public final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
         public var errorDescription: String? {
             switch self {
-            case .noCamera: return "没有找到可用的摄像头"
-            case .cannotConfigure: return "无法配置摄像头"
-            case .noAudioInput: return "没有找到可用的麦克风"
+            case .noCamera: return L("没有找到可用的摄像头")
+            case .cannotConfigure: return L("无法配置摄像头")
+            case .noAudioInput: return L("没有找到可用的麦克风")
             }
         }
     }

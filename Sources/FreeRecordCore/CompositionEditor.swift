@@ -62,15 +62,15 @@ public enum CompositionEditor {
         public var errorDescription: String? {
             switch self {
             case .emptySegments:
-                return "没有选择要保留的片段"
+                return L("没有选择要保留的片段")
             case .noTracks:
-                return "文件里没有可导出的音视频轨道"
+                return L("文件里没有可导出的音视频轨道")
             case .insertFailed(let message):
-                return "裁剪时间轴失败：\(message)"
+                return LF("裁剪时间轴失败：%@", message)
             case .exportFailed(let message):
-                return "导出失败：\(message)"
+                return LF("导出失败：%@", message)
             case .exportCancelled:
-                return "导出已取消"
+                return L("导出已取消")
             }
         }
     }
@@ -203,7 +203,7 @@ public enum CompositionEditor {
         guard let session = AVAssetExportSession(
             asset: composition,
             presetName: AVAssetExportPresetPassthrough) else {
-            throw EditorError.exportFailed("无法创建导出任务")
+            throw EditorError.exportFailed(L("无法创建导出任务"))
         }
         session.outputURL = outputURL
         session.outputFileType = fileType
@@ -237,7 +237,7 @@ public enum CompositionEditor {
             throw EditorError.exportCancelled
         default:
             let message = CompositionEditor.describe(session.error)
-                ?? "导出未完成（状态 \(session.status.rawValue)）"
+                ?? LF("导出未完成（状态 %lld）", session.status.rawValue)
             try? fm.removeItem(at: outputURL)
             throw EditorError.exportFailed(message)
         }
@@ -269,18 +269,19 @@ public enum CompositionEditor {
     /// 逐层展开底层错误（`-11800` 背后常是 `NSOSStatusErrorDomain -16341` 之类）
     static func describe(_ error: Error?) -> String? {
         guard let nsError = error as NSError? else { return nil }
-        var parts = ["\(nsError.localizedDescription)（\(nsError.domain) \(nsError.code)）"]
+        // domain/code 与技术性括号对两种语言都中立，只有「底层：」需要查表
+        var parts = ["\(nsError.localizedDescription) (\(nsError.domain) \(nsError.code))"]
         if let reason = nsError.localizedFailureReason, !reason.isEmpty {
             parts.append(reason)
         }
         var underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
         var depth = 0
         while let current = underlying, depth < 3 {
-            parts.append("底层：\(current.localizedDescription)（\(current.domain) \(current.code)）")
+            parts.append(LF("底层：%@ (%@ %lld)", current.localizedDescription, current.domain, current.code))
             underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError
             depth += 1
         }
-        return parts.joined(separator: "；")
+        return parts.joined(separator: "; ")
     }
 
     // MARK: - 查询

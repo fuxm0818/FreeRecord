@@ -18,11 +18,11 @@ public final class Mp3Exporter {
 
         public var errorDescription: String? {
             switch self {
-            case .noEncoder: return "找不到 MP3 编码器"
-            case .noAudioTrack: return "文件里没有音轨"
-            case .readerFailed(let message): return "读取音频失败：\(message)"
-            case .unexpectedPCMFormat: return "解码出的音频格式不是 16 位交错 PCM"
-            case .encoderFailed(let message): return "MP3 编码失败：\(message)"
+            case .noEncoder: return L("找不到 MP3 编码器")
+            case .noAudioTrack: return L("文件里没有音轨")
+            case .readerFailed(let message): return LF("读取音频失败：%@", message)
+            case .unexpectedPCMFormat: return L("解码出的音频格式不是 16 位交错 PCM")
+            case .encoderFailed(let message): return LF("MP3 编码失败：%@", message)
             }
         }
     }
@@ -71,10 +71,10 @@ public final class Mp3Exporter {
             output = AVAssetReaderTrackOutput(track: tracks[0], outputSettings: Self.pcmSettings)
         }
         output.alwaysCopiesSampleData = false
-        guard reader.canAdd(output) else { throw ExportError.readerFailed("音频格式不支持") }
+        guard reader.canAdd(output) else { throw ExportError.readerFailed(L("音频格式不支持")) }
         reader.add(output)
         guard reader.startReading() else {
-            throw ExportError.readerFailed(reader.error?.localizedDescription ?? "无法开始读取")
+            throw ExportError.readerFailed(reader.error?.localizedDescription ?? L("无法开始读取"))
         }
 
         let logURL = FileManager.default.temporaryDirectory
@@ -160,7 +160,7 @@ public final class Mp3Exporter {
                     logURL: logURL
                 )
                 guard let started = process else {
-                    failure = ExportError.encoderFailed("无法启动编码器")
+                    failure = ExportError.encoderFailed(L("无法启动编码器"))
                     break
                 }
                 stdin = (started.standardInput as? Pipe)?.fileHandleForWriting
@@ -173,11 +173,11 @@ public final class Mp3Exporter {
         process?.waitUntilExit()
 
         if failure == nil, reader.status == .failed {
-            failure = ExportError.readerFailed(reader.error?.localizedDescription ?? "读取中断")
+            failure = ExportError.readerFailed(reader.error?.localizedDescription ?? L("读取中断"))
         }
         if failure == nil, let process, process.terminationStatus != 0 {
             let log = (try? Data(contentsOf: logURL)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
-            let firstLine = log.split(separator: "\n").first.map(String.init) ?? "退出码 \(process.terminationStatus)"
+            let firstLine = log.split(separator: "\n").first.map(String.init) ?? LF("退出码 %d", process.terminationStatus)
             failure = ExportError.encoderFailed(firstLine)
         }
         try? FileManager.default.removeItem(at: logURL)

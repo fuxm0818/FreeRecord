@@ -57,14 +57,14 @@ final class CameraRecordWindowController: NSObject {
     private func prepare(saveDirectory: URL) async {
         let cameraGranted = await AVCaptureDevice.requestAccess(for: .video)
         guard cameraGranted else {
-            onFailed?("没有摄像头权限。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
+            onFailed?(L("没有摄像头权限。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。"))
             return
         }
         let micGranted = await AVCaptureDevice.requestAccess(for: .audio)
         do {
             try capture.configure(hasAudio: micGranted)
         } catch {
-            onFailed?("摄像头启动失败：\(error.localizedDescription)")
+            onFailed?(LF("摄像头启动失败：%@", error.localizedDescription))
             return
         }
         buildPanel(saveDirectory: saveDirectory)
@@ -111,7 +111,7 @@ final class CameraRecordWindowController: NSObject {
         bottom.autoresizingMask = [.width, .height]
         container.addSubview(bottom)
 
-        let title = NSTextField(labelWithString: "摄像头录制")
+        let title = NSTextField(labelWithString: L("摄像头录制"))
         title.font = .systemFont(ofSize: 13, weight: .semibold)
         title.textColor = .white
 
@@ -125,19 +125,19 @@ final class CameraRecordWindowController: NSObject {
         status.textColor = NSColor.white.withAlphaComponent(0.55)
         statusLabel = status
 
-        let start = NSButton(title: "开始录制", target: self, action: #selector(startClicked))
+        let start = NSButton(title: L("开始录制"), target: self, action: #selector(startClicked))
         start.bezelStyle = .rounded
         start.controlSize = .large
         start.contentTintColor = .systemRed
         startButton = start
 
-        let pause = NSButton(title: "暂停", target: self, action: #selector(pauseClicked))
+        let pause = NSButton(title: L("暂停"), target: self, action: #selector(pauseClicked))
         pause.bezelStyle = .rounded
         pause.isHidden = true
         pauseButton = pause
 
         let close = NSButton(
-            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "关闭") ?? NSImage(),
+            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L("关闭")) ?? NSImage(),
             target: self,
             action: #selector(closeClicked)
         )
@@ -204,7 +204,7 @@ final class CameraRecordWindowController: NSObject {
             startTimer()
             updateUI()
         } catch {
-            onFailed?("开始录制失败：\(error.localizedDescription)")
+            onFailed?(LF("开始录制失败：%@", error.localizedDescription))
         }
     }
 
@@ -242,7 +242,7 @@ final class CameraRecordWindowController: NSObject {
                 self.writer = nil
                 self.isFinishing = false
                 self.updateUI()
-                self.onFailed?("保存失败：\(error.localizedDescription)")
+                self.onFailed?(LF("保存失败：%@", error.localizedDescription))
             }
         }
     }
@@ -269,11 +269,11 @@ final class CameraRecordWindowController: NSObject {
 
     private func updateUI() {
         let recording = writer != nil
-        startButton?.title = isFinishing ? "保存中…" : (recording ? "停止并保存" : "开始录制")
+        startButton?.title = isFinishing ? L("保存中…") : (recording ? L("停止并保存") : L("开始录制"))
         startButton?.isEnabled = !isFinishing
         pauseButton?.isHidden = !recording || isFinishing
-        pauseButton?.title = pauseStarted != nil ? "继续" : "暂停"
-        statusLabel?.stringValue = isFinishing ? "正在保存…" : (pauseStarted != nil ? "已暂停" : (recording ? "录制中" : ""))
+        pauseButton?.title = pauseStarted != nil ? L("继续") : L("暂停")
+        statusLabel?.stringValue = isFinishing ? L("正在保存…") : (pauseStarted != nil ? L("已暂停") : (recording ? L("录制中") : ""))
         timerLabel?.textColor = pauseStarted != nil ? .systemYellow : .white
         updateTime()
     }

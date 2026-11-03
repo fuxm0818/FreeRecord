@@ -34,7 +34,7 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 
 交互范式：**先选范围，再在浮动工具条里调参数，点确认才开始**；选区层悬停即高亮窗口、单击录该窗口、拖拽框选区域、双击桌面录全屏、ESC 取消。
 
-## 新手最需要知道的 10 个实现点
+## 新手最需要知道的 12 个实现点
 
 1. **自己的 UI 不会进画面。** 靠两层保护，**缺一不可**（见 `ScreenCapture.ownHiddenWindows` 与各浮动面板的 `configureAsCaptureHiddenFloatingUI()`）：
    - `title = ScreenCapture.hiddenWindowTitle` + `SCContentFilter(display:excludingWindows:)` —— 只挡**自家** SCK 采集；
@@ -53,8 +53,11 @@ AVAudioEngine / AVCaptureSession (麦克风)   ─音频轨0──┘
 9. **构建脚本别用本机表现当准。** 本机 `/bin/bash` 是 3.2，GitHub runner 上是 Homebrew 的 bash 5.2：5.2 在 UTF-8 locale 下会把紧跟变量的全角标点字节算进变量名，`echo "$ARCH）"` 直接 `unbound variable` 中断；更糟的是 `trap 'rm -rf "$WORK"' EXIT` 里最后一条命令成功会把退出码压回 0，父脚本的 `set -e` 于是拦不住，CI 全绿但包里没有编码器。约定：中文里的变量一律写 `${VAR}`；EXIT trap 用 `st=$?; …; exit $st`；打包方只认产物不认退出码（`build.sh` 断言 `Helpers/lame` 存在且双架构，CI 的「校验成品」再断一次）。
 10. **LSUIElement App 默认不装主菜单，⌘Q 是死的。** `NSApp.mainMenu` 为 nil 时菜单条没有本 App 的菜单，退出 / 复制粘贴 / 关窗这些系统级键位全部没人接。`AppDelegate.installMainMenu()` 手建 App、编辑、窗口三份菜单：系统动作（`terminate:`、`copy:`、`performClose:`）留空 target 交给响应链，只有自家动作（设置…）绑 `self`。App 形态由 `refreshAppActivationPolicy()`（同文件）**单点**判定 —— 有可见的 titled 窗口就是 `.regular`（出 Dock 图标、菜单条显示本 App），只剩选区层与浮动工具条时退回 `.accessory`；状态栏窗口和这些浮层都是 borderless，不会被误判成 titled。实测 `.accessory` 且本 App 是当前应用时主菜单键位仍然生效，所以录制期间另加「忙」判定（`isCaptureSessionBusy`）保持不抢菜单条。**新窗口不要再自己调 `setActivationPolicy`**，几个窗口各自来回切会互相打架。
 
+11. **App 名字有四个来源，别改错地方。** `Contents/Resources/<lang>.lproj/InfoPlist.strings` 决定 Finder / Dock / 关于面板 / 「系统设置 → 隐私与安全性」列表里的名字和授权弹窗文案（源文件在 `Resources/`，由 `scripts/build.sh` 整目录拷进包内 —— 漏这步，英文系统还是显示中文，且没有报错）；菜单条最粗的那个名字取 `CFBundleName`（`FreeRecord`），不受 `CFBundleDisplayName` 影响；`Info.plist` 里的值是「开发区域 zh-Hans」的兜底，只在缺对应 `.lproj` 时被用到；App 内部显示 App 名的地方走 `appDisplayName`（读 `CFBundleDisplayName`，跟着语言变），别再往代码里写死「自由录屏」。核验办法：同一份包用 `open FreeRecord.app --args -AppleLanguages "(en)"` 启动，`lsappinfo info -only name <pid>` 应报 `FreeRecord`，不带参数（zh-Hans-CN）应报「自由录屏」——LaunchServices 会缓存，改完包记得 `lsregister -f`。
+12. **界面文案以中文原文当 key。** `FreeRecordCore/Localization.swift` 的 `L(_:)` 把中文原文既当 key 又当默认值，所以只有 `Resources/en.lproj/Localizable.strings` 需要维护，查不到就退回中文，永远不会出现空白；新增中文文案不用补 zh 文件，补英文才需要。SwiftUI 的 `Text` / `Button` / `Toggle` / `.help` 字面量框架自动查表，不用包；AppKit 手工赋值的（`NSAlert`、`NSMenuItem`、`NSButton.title`、`NSTextField`、`toolTip`、`accessibilityDescription`、`NSPopUpButton` 项）必须走 `L` / `LF`。两个坑：带变量的文案要用 `LF("…%@…", x)`，**不能**写 `L("…\(x)…")`——插值出来的 key 是动态的，永远查不中；一组控件的文案要在**辅助函数内部**查表（`label(_:)`、`iconButton(help:)`、`makeToggle(tip:)`、`actionItem(_:)`、`statusImage(description:)`），调用点保持中文原文，否则每个调用点都要包一层、字典键也会跟着语言变（`valueLabels` 就是靠中文原文做键的）。不按语言变的三类是刻意的：文件与目录名（`Movies/自由录屏`、`REC-`/`AUD-`/`截图`/`-裁剪`）跨语言要能接上历史，聚合设备「自由录屏多输出」按名字匹配用户已有的设备，诊断日志正文是给开发看的。第三个坑是布局：英文普遍比对应中文长（「帧率」12pt 约 24pt，"Frame rate" 61pt），为中文写死的定宽会裁字，所以信息列宽按本地化后的最宽标签实测、无边框面板按控件实测排布来定宽（`AudioRecordWindow.build` 要取空闲 / 录制 / 准备三种排布里最宽的一次，因为 `fittingSize` 只在 build 时量一次，而录制态会多出提示与暂停键）。核验办法同 11：强制英文启动后用 AX 读真实界面文本与坐标，逐窗口 grep 汉字，再看最右控件的边缘有没有落在面板内。
+
 ## 关键约定
 
 - 语言模式 Swift 5（`swift-tools-version: 5.7` 默认），并发标注用 `@MainActor`，跨线程状态用 `NSLock` 保护。
-- 面向用户的文案与代码注释一律中文。
+- 面向用户的文案一律用中文原文书写（中文同时就是本地化 key），英文只维护 `Resources/en.lproj/Localizable.strings` 一份；代码注释一律中文。
 - 不链接第三方库，系统框架优先；唯一的例外是 MP3 编码 —— 它以独立可执行文件（LGPL 的 LAME）随包分发、用子进程调用，App 本体保持 MIT。

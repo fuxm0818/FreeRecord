@@ -11,10 +11,10 @@ public enum AudioSource: String, CaseIterable, Codable, Identifiable, Hashable {
 
     public var title: String {
         switch self {
-        case .none: return "静音"
-        case .microphone: return "麦克风"
-        case .system: return "系统声音"
-        case .microphoneAndSystem: return "麦克风+系统声音"
+        case .none: return L("静音")
+        case .microphone: return L("麦克风")
+        case .system: return L("系统声音")
+        case .microphoneAndSystem: return L("麦克风+系统声音")
         }
     }
 
@@ -57,7 +57,7 @@ public enum CaptureError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .noDisplay: return "没有找到可录制的显示器"
+        case .noDisplay: return L("没有找到可录制的显示器")
         case .unsupportedOS(let message): return message
         }
     }

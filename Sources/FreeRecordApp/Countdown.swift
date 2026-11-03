@@ -48,7 +48,7 @@ final class CountdownController: NSObject {
             label.translatesAutoresizingMaskIntoConstraints = false
 
             // 倒计时页面直接提示快捷键，省去再去设置里找
-            let hint = NSTextField(labelWithString: "开始/停止 ⌥⌘R   暂停 ⌥⌘P")
+            let hint = NSTextField(labelWithString: L("开始/停止 ⌥⌘R   暂停 ⌥⌘P"))
             hint.font = NSFont.systemFont(ofSize: 17, weight: .medium)
             hint.textColor = NSColor.white.withAlphaComponent(0.85)
             hint.shadow = {

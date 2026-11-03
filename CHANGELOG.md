@@ -2,6 +2,19 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [1.1.2] - 2026-11-03
+
+### 界面
+
+- **App 名称按系统语言显示**：以前只有 `Info.plist` 里一份 `CFBundleDisplayName = 自由录屏`，英文系统同样在 Finder、Dock、「系统设置 → 隐私与安全性」列表里显示中文，英文名 `FreeRecord` 只在菜单条出现（那里取的是 `CFBundleName`）。现在新增 `Resources/zh-Hans.lproj/InfoPlist.strings` 与 `Resources/en.lproj/InfoPlist.strings`，随包一起拷进 `Contents/Resources/`，中文系统显示「自由录屏」、英文系统显示 "FreeRecord"；三条权限用途说明（摄像头 / 麦克风 / 屏幕录制）一并跟着语言切换，英文系统的授权弹窗不再出现中文。`scripts/build.sh` 负责拷目录，`CFBundleLocalizations` 声明 zh-Hans + en。
+  - 实测（同一份包，用 `-AppleLanguages "(en)"` 强制英文启动）：LaunchServices 报出的 `LSDisplayName` 由「自由录屏」变为 `FreeRecord`；不带参数（本机 zh-Hans-CN）仍是「自由录屏」
+- **界面文案整体按系统语言切换**：App 内部所有可见文案原来都写死中文，英文系统里会出现「菜单栏 FreeRecord + 窗口标题 FreeRecord + 按钮全是中文」的混合界面。现在整套界面走标准本地化：`FreeRecordCore` 新增 `L(_:)` / `LF(_:_:)`，**以中文原文作为 key**，`Resources/en.lproj/Localizable.strings` 只写英文一份（249 条）；查不到就退回中文原文，不会出现空白。SwiftUI 的 `Text` / `Button` / `Toggle` / `.help` 字面量由框架自动查表；AppKit 侧（`NSAlert`、`NSMenuItem`、`NSButton.title`、`NSTextField`、`toolTip`、`accessibilityDescription`、`NSPopUpButton`）逐个改走 `L` / `LF`，标签与图标按钮这类成组控件在**辅助函数内部**统一查表，避免每个调用点各写一遍。
+  - 带参数的文案改用格式串（`%@` / `%lld` / `%d` / `%.1f`），不再用字符串插值拼 key——插值出来的 key 是动态的，永远查不中；错误链里的 `（domain code）` 与分词分隔符换成 ASCII，两种语言共用
+  - **跟着改的是几处为中文宽度写死的布局**：英文单词普遍比对应中文长（「帧率」12pt 约 24pt，"Frame rate" 61pt；「开始录制」80pt，"Start Recording" 123pt），原来不放开就会裁字。预览面板的信息列宽改成按本地化后的最宽标签实测（下限仍是 58），设置窗「保存位置」那列 72 → 92，录音小窗与录制前工具条的面板宽度改成按控件实测排布来定（取空闲 / 录制 / 准备三种排布里最宽的一次），不再写死
+  - 实测（`dist/FreeRecord.app` 同一份包，`-AppleLanguages "(en)"` 强制英文 + AX 读取真实界面文本与坐标）：首页窗口、设置窗、摄像头录制窗、录音窗、录制完成预览面板、裁剪面板、菜单栏状态菜单、系统主菜单全部为英文，读到的节点里没有一个汉字；英文录音窗实测由 420 放宽到 534，「Start Recording」右边缘落在面板内。不带参数（zh-Hans-CN）时首页与菜单条仍是「自由录屏 / 录制列表 / 无视频 / 打开主界面 / 退出 自由录屏」，文案与升级前一致；录音窗 420 → 429，多出这 9pt 是因为按录制态实测后，「正在录制」提示不再被挤掉尾部（原来中文录制态也一直差 13pt 在压缩）
+  - 有意不本地化的部分：默认录制目录 `~/Movies/自由录屏`、成片与截图的文件名前缀（`REC-` / `AUD-` / `截图` / `-裁剪`）、聚合音频设备名「自由录屏多输出」（按名字匹配已存在的设备）、`NSError(domain: "自由录屏")`、`~/Library/Logs/FreeRecord/` 里的诊断日志正文（开发用遥测），以及只在开发期用的 POC 界面和尚未接线的 `Presets.list`
+  - 未做实机验证的部分（改的是同一套机制，但没在英文环境里触发到）：需要真按一次录制才会出现的录制前工具条与控制条（工具条的宽度同样改成按实测排布，只是没在界面上打开过）、系统权限首次弹窗、录中截图与保存面板。录制中与预览/裁剪相关的文案已在上面实测为英文
+
 ## [1.1.1] - 2026-11-03
 
 ### 修复

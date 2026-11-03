@@ -1,0 +1,5 @@
+/* 英文系统的 App 名称与权限文案；中文值在 App-Info.plist 里（CFBundleDevelopmentRegion = zh-Hans）。 */
+CFBundleDisplayName = "FreeRecord";
+NSCameraUsageDescription = "FreeRecord uses the camera to record your camera view.";
+NSMicrophoneUsageDescription = "FreeRecord uses the microphone to record the audio source you choose.";
+NSScreenCaptureUsageDescription = "FreeRecord records the screen area you choose.";

@@ -9,8 +9,8 @@ public final class AudioDeviceCapture: NSObject, AVCaptureAudioDataOutputSampleB
 
         public var errorDescription: String? {
             switch self {
-            case .deviceNotFound: return "没有找到可用的音频输入设备"
-            case .cannotAddInput: return "无法添加音频输入"
+            case .deviceNotFound: return L("没有找到可用的音频输入设备")
+            case .cannotAddInput: return L("无法添加音频输入")
             }
         }
     }

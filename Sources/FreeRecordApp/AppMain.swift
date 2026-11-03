@@ -138,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         regionSelector.onUnavailable = { [weak self] in
             guard let self else { return }
             self.rebuildMenu()
-            self.alert("没有「屏幕录制」权限，无法选择录制范围。\n\n请在 系统设置 → 隐私与安全性 → 屏幕与系统音频录制 里授权，然后重新打开本 App。")
+            self.alert(L("没有「屏幕录制」权限，无法选择录制范围。\n\n请在 系统设置 → 隐私与安全性 → 屏幕与系统音频录制 里授权，然后重新打开本 App。"))
         }
         regionSelector.onCancelled = { [weak self] in self?.rebuildMenu() }
 
@@ -287,60 +287,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private func installMainMenu() {
         let mainMenu = NSMenu()
 
-        let appItem = mainMenu.addItem(withTitle: "自由录屏", action: nil, keyEquivalent: "")
-        let appMenu = NSMenu(title: "自由录屏")
+        let appName = appDisplayName
+        let appItem = mainMenu.addItem(withTitle: appName, action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: appName)
         appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "关于 自由录屏",
+        appMenu.addItem(withTitle: LF("关于 %@", appName),
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
-        let settingsItem = appMenu.addItem(withTitle: "设置…",
+        let settingsItem = appMenu.addItem(withTitle: L("设置…"),
                                            action: #selector(showSettings),
                                            keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(.separator())
-        let servicesItem = appMenu.addItem(withTitle: "服务", action: nil, keyEquivalent: "")
-        let servicesMenu = NSMenu(title: "服务")
+        let servicesItem = appMenu.addItem(withTitle: L("服务"), action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: L("服务"))
         servicesItem.submenu = servicesMenu
         NSApp.servicesMenu = servicesMenu
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏 自由录屏",
+        appMenu.addItem(withTitle: LF("隐藏 %@", appName),
                         action: #selector(NSApplication.hide(_:)),
                         keyEquivalent: "h")
-        let hideOthers = appMenu.addItem(withTitle: "隐藏其他",
+        let hideOthers = appMenu.addItem(withTitle: L("隐藏其他"),
                                          action: #selector(NSApplication.hideOtherApplications(_:)),
                                          keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
-        appMenu.addItem(withTitle: "全部显示",
+        appMenu.addItem(withTitle: L("全部显示"),
                         action: #selector(NSApplication.unhideAllApplications(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 自由录屏",
+        appMenu.addItem(withTitle: LF("退出 %@", appName),
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
 
-        let editItem = mainMenu.addItem(withTitle: "编辑", action: nil, keyEquivalent: "")
-        let editMenu = NSMenu(title: "编辑")
+        let editItem = mainMenu.addItem(withTitle: L("编辑"), action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: L("编辑"))
         editItem.submenu = editMenu
-        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        let redoItem = editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: L("撤销"), action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = editMenu.addItem(withTitle: L("重做"), action: Selector(("redo:")), keyEquivalent: "z")
         redoItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: L("剪切"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: L("拷贝"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L("粘贴"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L("全选"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
-        let windowItem = mainMenu.addItem(withTitle: "窗口", action: nil, keyEquivalent: "")
-        let windowMenu = NSMenu(title: "窗口")
+        let windowItem = mainMenu.addItem(withTitle: L("窗口"), action: nil, keyEquivalent: "")
+        let windowMenu = NSMenu(title: L("窗口"))
         windowItem.submenu = windowMenu
-        windowMenu.addItem(withTitle: "最小化",
+        windowMenu.addItem(withTitle: L("最小化"),
                            action: #selector(NSWindow.performMiniaturize(_:)),
                            keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "关闭窗口",
+        windowMenu.addItem(withTitle: L("关闭窗口"),
                            action: #selector(NSWindow.performClose(_:)),
                            keyEquivalent: "w")
-        windowMenu.addItem(withTitle: "全部置于前台",
+        windowMenu.addItem(withTitle: L("全部置于前台"),
                            action: #selector(NSApplication.arrangeInFront(_:)),
                            keyEquivalent: "")
         NSApp.windowsMenu = windowMenu
@@ -362,9 +363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
         let stateTitle: String
         switch coordinator.state {
-        case .idle: stateTitle = "自由录屏 · 准备就绪"
-        case .recording, .finishing: stateTitle = "录制中 \(timeString(coordinator.elapsed))"
-        case .paused: stateTitle = "已暂停 \(timeString(coordinator.elapsed))"
+        case .idle: stateTitle = LF("%@ · 准备就绪", appDisplayName)
+        case .recording, .finishing: stateTitle = LF("录制中 %@", timeString(coordinator.elapsed))
+        case .paused: stateTitle = LF("已暂停 %@", timeString(coordinator.elapsed))
         }
         let stateItem = NSMenuItem(title: stateTitle, action: nil, keyEquivalent: "")
         stateItem.isEnabled = false
@@ -379,12 +380,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             menu.addItem(actionItem("摄像头录制…", action: #selector(showCameraRecorderMenu), key: ""))
             menu.addItem(.separator())
         } else {
-            let pauseTitle = coordinator.state == .paused ? "继续录制" : "暂停录制"
+            let pauseTitle = coordinator.state == .paused ? L("继续录制") : L("暂停录制")
             menu.addItem(actionItem(pauseTitle, action: #selector(togglePauseRecording), key: "p", modifiers: [.command, .option]))
             menu.addItem(actionItem("停止并保存", action: #selector(stopRecording), key: "s"))
             menu.addItem(actionItem("取消录制", action: #selector(cancelRecording), key: ""))
             menu.addItem(.separator())
-            let hint = NSMenuItem(title: "录屏过程中系统不会进入睡眠模式", action: nil, keyEquivalent: "")
+            let hint = NSMenuItem(title: L("录屏过程中系统不会进入睡眠模式"), action: nil, keyEquivalent: "")
             hint.isEnabled = false
             menu.addItem(hint)
             menu.addItem(.separator())
@@ -392,7 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
         menu.addItem(actionItem("设置…", action: #selector(showSettings), key: ","))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "退出 自由录屏", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: LF("退出 %@", appDisplayName), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         statusItem.menu = menu
         updateStatusButton()
@@ -413,8 +414,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         }
     }
 
+    /// 菜单栏动作项：title 传中文原文，这里统一查本地化表（新增菜单项不用再自己包 L）
     private func actionItem(_ title: String, action: Selector, key: String, modifiers: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        let item = NSMenuItem(title: L(title), action: action, keyEquivalent: key)
         item.keyEquivalentModifierMask = modifiers
         item.target = self
         item.isEnabled = true
@@ -424,18 +426,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     @objc private func showBlackHoleGuide() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "安装 BlackHole 虚拟声卡"
-        alert.informativeText = """
-        在 macOS 12 上录制系统声音需要安装免费的 BlackHole 虚拟声卡（开源软件）。
-
-        安装方式二选一：
-        1. 用 Homebrew：brew install blackhole-2ch
-        2. 从官网下载安装包
-
-        安装完成后重新打开本 App，就能选「系统声音」了。
-        """
-        alert.addButton(withTitle: "打开下载页")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("安装 BlackHole 虚拟声卡")
+        // 单行 + \n 写法：本项目的键就是中文原文，多行字面量会让 Localizable.strings 里的键难以对齐
+        alert.informativeText = L("在 macOS 12 上录制系统声音需要安装免费的 BlackHole 虚拟声卡（开源软件）。\n\n安装方式二选一：\n1. 用 Homebrew：brew install blackhole-2ch\n2. 从官网下载安装包\n\n安装完成后重新打开本 App，就能选「系统声音」了。")
+        alert.addButton(withTitle: L("打开下载页"))
+        alert.addButton(withTitle: L("取消"))
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             if let url = URL(string: "https://existential.audio/blackhole/") {
@@ -449,15 +444,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             let result = try SystemAudioSupport.createMultiOutputAggregate()
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = result.alreadyExisted ? "多输出设备已存在" : "已创建多输出设备"
-            alert.informativeText = "要把系统声音同时送到扬声器和录制轨道，需要把系统输出切到「自由录屏多输出」。现在切换吗？（之后可随时在 系统设置→声音 切回）"
-            alert.addButton(withTitle: "切换输出")
-            alert.addButton(withTitle: "暂不")
+            alert.messageText = result.alreadyExisted ? L("多输出设备已存在") : L("已创建多输出设备")
+            alert.informativeText = L("要把系统声音同时送到扬声器和录制轨道，需要把系统输出切到「自由录屏多输出」。现在切换吗？（之后可随时在 系统设置→声音 切回）")
+            alert.addButton(withTitle: L("切换输出"))
+            alert.addButton(withTitle: L("暂不"))
             if alert.runModal() == .alertFirstButtonReturn {
                 _ = SystemAudioSupport.setDefaultOutput(to: result.deviceID)
             }
         } catch {
-            alert("创建多输出设备失败：\(error.localizedDescription)")
+            alert(LF("创建多输出设备失败：%@", error.localizedDescription))
         }
     }
 
@@ -495,7 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private func openScreenRecording() {
         guard coordinator.state == .idle, !coordinator.isPreparing else { return }
         guard !cameraWindow.isRecording else {
-            alert("摄像头正在录制，请先停止摄像头录制。")
+            alert(L("摄像头正在录制，请先停止摄像头录制。"))
             return
         }
         cameraWindow.hide()
@@ -527,7 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
     private func showAudioRecorder() {
         guard !cameraWindow.isRecording else {
-            alert("摄像头正在录制，请先停止摄像头录制。")
+            alert(L("摄像头正在录制，请先停止摄像头录制。"))
             return
         }
         cameraWindow.hide()
@@ -540,7 +535,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
 
     private func showCameraRecorder() {
         guard coordinator.state == .idle else {
-            alert("请先结束当前录制，再打开摄像头录制。")
+            alert(L("请先结束当前录制，再打开摄像头录制。"))
             return
         }
         audioWindow.hide()
@@ -643,7 +638,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                 self.settings.cameraEnabled = false
                 self.preRecordBar.setCameraToggle(on: false)
                 self.hideCameraPreview()
-                self.alert("摄像头没能开启。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
+                self.alert(L("摄像头没能开启。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。"))
                 return
             }
             guard self.preRecordBar.isShowing, let target = self.pendingTarget else {
@@ -683,7 +678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             )
             guard ok else {
                 self.settings.cameraEnabled = false
-                self.alert("摄像头没能开启。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
+                self.alert(L("摄像头没能开启。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。"))
                 return
             }
             // 等授权/起会话这期间用户又关掉了，或录制已停止：别把小窗晾在画面上
@@ -818,7 +813,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private func beginConfirmedRecording() {
         guard let pending = pendingTarget else { return }
         guard preRecordBar.applyTo(settings: settings) != nil else {
-            alert("宽高无效：请输入 16 以上的整数。")
+            alert(L("宽高无效：请输入 16 以上的整数。"))
             return
         }
         preRecordBar.hide()
@@ -837,7 +832,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
             if screen != nil, display == nil {
                 self.regionFrame.hide()
                 self.hideCameraPreview()
-                self.alert("没能读到屏幕信息，录制无法开始。\n\n请确认「屏幕录制」权限已授权；如果已经打开，去系统设置里关一次再打开「自由录屏」后重启 App。")
+                self.alert(L("没能读到屏幕信息，录制无法开始。\n\n请确认「屏幕录制」权限已授权；如果已经打开，去系统设置里关一次再打开「自由录屏」后重启 App。"))
                 return
             }
             // 开关是在选区阶段打开的，摄像头通常已在跑；这里兜住「刚打开就点开始」
@@ -858,7 +853,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
                 } else {
                     self.settings.cameraEnabled = false
                     self.preRecordBar.setCameraToggle(on: false)
-                    self.alert("摄像头没能开启，本次将只录制屏幕。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。")
+                    self.alert(L("摄像头没能开启，本次将只录制屏幕。\n\n请在 系统设置 → 隐私与安全性 → 摄像头 里授权后重试。"))
                 }
             }
             self.beginRecording(pending: pending, display: display)
@@ -1051,15 +1046,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     func recordingPermissionNeeded() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "本 App 暂时读不到「屏幕录制」权限"
-        alert.informativeText = """
-        如果系统设置里已经显示开启：关掉这个弹窗切回本 App 会自动重试；仍不行请点「重启 App」——App 重新打包后签名会变，旧授权随之失效，重启后在系统设置里关一次再开一次即可。
-
-        如果还没开：点「打开系统设置」，在 隐私与安全性 → 屏幕与系统音频录制 里打开「自由录屏」，授权后切回本 App，录制会自动继续。
-        """
-        alert.addButton(withTitle: "打开系统设置")
-        alert.addButton(withTitle: "重启 App")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("本 App 暂时读不到「屏幕录制」权限")
+        alert.informativeText = L("如果系统设置里已经显示开启：关掉这个弹窗切回本 App 会自动重试；仍不行请点「重启 App」——App 重新打包后签名会变，旧授权随之失效，重启后在系统设置里关一次再开一次即可。\n\n如果还没开：点「打开系统设置」，在 隐私与安全性 → 屏幕与系统音频录制 里打开「自由录屏」，授权后切回本 App，录制会自动继续。")
+        alert.addButton(withTitle: L("打开系统设置"))
+        alert.addButton(withTitle: L("重启 App"))
+        alert.addButton(withTitle: L("取消"))
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
@@ -1127,7 +1118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     }
 
     private func statusImage(_ symbol: String, tint: NSColor?, description: String) -> NSImage? {
-        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: description) else { return nil }
+        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: L(description)) else { return nil }
         if let tint {
             image.isTemplate = false
             // SF Symbol 非模板后内容仍是黑的，用锁定的模板锁渲染成目标色
@@ -1143,7 +1134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
     private func showCountdownStatus(seconds: Int) {
         guard coordinator.state == .idle, let button = statusItem?.button else { return }
         button.image = statusImage("record.circle", tint: .systemBlue, description: "即将开始录制")
-        button.attributedTitle = NSAttributedString(string: " \(seconds) 秒后开始", attributes: [
+        button.attributedTitle = NSAttributedString(string: " " + LF("%lld 秒后开始", seconds), attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: NSColor.systemBlue,
         ])
@@ -1154,12 +1145,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RecordingCoordinatorDe
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
     }
 
+    /// 参数必须是已经本地化的文案（调用点用 L / LF），这里不再二次查表，免得带插值的消息查不到键
     private func alert(_ message: String) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "自由录屏"
+        alert.messageText = appDisplayName
         alert.informativeText = message
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: L("好"))
         alert.runModal()
     }
 }

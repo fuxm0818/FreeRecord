@@ -225,7 +225,7 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     public func stream(_ stream: SCStream, didStopWithError error: Error) {
-        onError?("采集中断：\(error.localizedDescription)")
+        onError?(LF("采集中断：%@", error.localizedDescription))
     }
 
     /// 定时器整个生命周期都在采集 queue 上：启动、补帧、取消互不抢状态

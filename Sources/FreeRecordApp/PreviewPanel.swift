@@ -74,7 +74,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "录制完成"
+        window.title = L("录制完成")
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.minSize = NSSize(width: 760, height: 460)
@@ -105,7 +105,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         nameField.action = #selector(commitRename)
         self.nameField = nameField
 
-        let renameButton = NSButton(title: "重命名", target: self, action: #selector(commitRename))
+        let renameButton = NSButton(title: L("重命名"), target: self, action: #selector(commitRename))
         renameButton.bezelStyle = .rounded
         renameButton.controlSize = .small
         renameButton.translatesAutoresizingMaskIntoConstraints = false
@@ -121,15 +121,23 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         infoStack.alignment = .leading
         infoStack.spacing = 8
         infoStack.translatesAutoresizingMaskIntoConstraints = false
-        for title in ["文件大小", "时长", "创建时间", "分辨率", "帧率", "格式"] {
+        let titles = ["文件大小", "时长", "创建时间", "分辨率", "帧率", "格式"]
+        let displayTitles = titles.map { L($0) }
+        // 键列宽按本地化后的最宽标签算：英文「Frame rate」比中文「帧率」宽得多，写死 58 会被裁掉
+        let keyWidth: CGFloat = displayTitles
+            .map { ($0 as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width }
+            .max()
+            .map { max(58, $0 + 3).rounded(.up) } ?? 58
+        for (title, display) in zip(titles, displayTitles) {
             let row = NSStackView()
             row.orientation = .horizontal
             row.spacing = 8
-            let key = NSTextField(labelWithString: title)
+            // 显示用本地化后的名字，valueLabels 的键仍用中文原文，赋值处不必跟着语言变
+            let key = NSTextField(labelWithString: display)
             key.font = .systemFont(ofSize: 12)
             key.textColor = .secondaryLabelColor
             key.alignment = .left
-            key.widthAnchor.constraint(equalToConstant: 58).isActive = true
+            key.widthAnchor.constraint(equalToConstant: keyWidth).isActive = true
             let value = NSTextField(labelWithString: "—")
             value.font = .systemFont(ofSize: 12)
             value.lineBreakMode = .byTruncatingMiddle
@@ -150,7 +158,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         actions.spacing = 16
         actions.translatesAutoresizingMaskIntoConstraints = false
 
-        let close = NSButton(title: "完成", target: self, action: #selector(closePanel))
+        let close = NSButton(title: L("完成"), target: self, action: #selector(closePanel))
         close.bezelStyle = .rounded
         close.keyEquivalent = "\r"
         close.translatesAutoresizingMaskIntoConstraints = false
@@ -206,6 +214,8 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     }
 
     private func iconButton(_ symbol: String, help: String, action: Selector) -> NSButton {
+        // help 传中文原文，这里统一本地化（tooltip 与无障碍描述同一个值）
+        let help = L(help)
         let button = NSButton(
             image: NSImage(systemSymbolName: symbol, accessibilityDescription: help) ?? NSImage(),
             target: self,
@@ -231,7 +241,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         if recording.width > 0 {
             valueLabels["分辨率"]?.stringValue = "\(recording.width) × \(recording.height)"
         } else {
-            valueLabels["分辨率"]?.stringValue = recording.audioTrackCount > 0 ? "音频" : "—"
+            valueLabels["分辨率"]?.stringValue = recording.audioTrackCount > 0 ? L("音频") : "—"
             valueLabels["帧率"]?.stringValue = "—"
         }
         valueLabels["格式"]?.stringValue = ext
@@ -286,7 +296,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
         let current = url.deletingPathExtension().lastPathComponent
         guard !newName.isEmpty else {
             field.stringValue = current
-            renameHint?.stringValue = "文件名不能为空"
+            renameHint?.stringValue = L("文件名不能为空")
             return
         }
         guard newName != current else {
@@ -297,7 +307,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             .appendingPathComponent(newName)
             .appendingPathExtension(url.pathExtension)
         guard !FileManager.default.fileExists(atPath: target.path) else {
-            renameHint?.stringValue = "已有同名文件"
+            renameHint?.stringValue = L("已有同名文件")
             return
         }
         do {
@@ -313,7 +323,7 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
             )
             onFileChanged?()
         } catch {
-            renameHint?.stringValue = "重命名失败：\(error.localizedDescription)"
+            renameHint?.stringValue = LF("重命名失败：%@", error.localizedDescription)
         }
     }
 
@@ -340,10 +350,10 @@ final class PreviewPanelController: NSObject, NSWindowDelegate {
     @objc private func deleteFile() {
         guard let url else { return }
         let alert = NSAlert()
-        alert.messageText = "删除这个文件吗？"
+        alert.messageText = L("删除这个文件吗？")
         alert.informativeText = url.lastPathComponent
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("删除"))
+        alert.addButton(withTitle: L("取消"))
         alert.buttons.first?.hasDestructiveAction = true
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         player?.pause()

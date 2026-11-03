@@ -1,4 +1,5 @@
 import AppKit
+import FreeRecordCore
 
 /// 状态色固定的开关控件（用于替代深色面板上的 `NSSwitch`）。
 ///
@@ -59,7 +60,7 @@ final class StatefulSwitch: NSView {
     // MARK: - 无障碍（AppKit 无障碍 API 是可重写的方法，不是属性）
 
     /// 语义标签：同一窗口有多个开关时（如「麦克风」「系统声音」）必须可区分
-    var accessibilityLabelText = "开关"
+    var accessibilityLabelText = L("开关")
 
     override func isAccessibilityElement() -> Bool { true }
 
@@ -67,7 +68,7 @@ final class StatefulSwitch: NSView {
 
     override func accessibilityLabel() -> String? { accessibilityLabelText }
 
-    override func accessibilityValue() -> Any? { isOn ? "开" : "关" }
+    override func accessibilityValue() -> Any? { isOn ? L("开") : L("关") }
 
     /// VoiceOver / 键盘操作入口
     override func accessibilityPerformPress() -> Bool {

@@ -68,6 +68,6 @@ public final class SystemAudioStreamCapture: NSObject, SCStreamOutput, SCStreamD
     }
 
     public func stream(_ stream: SCStream, didStopWithError error: Error) {
-        onError?("系统声音采集中断：\(error.localizedDescription)")
+        onError?(LF("系统声音采集中断：%@", error.localizedDescription))
     }
 }

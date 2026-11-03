@@ -18,9 +18,9 @@ final class SavePanelController {
         let staged = stage(recording, near: defaultDirectory)
 
         let panel = NSSavePanel()
-        panel.title = "保存录制"
-        panel.prompt = "保存"
-        panel.message = "选择文件名、格式和保存位置"
+        panel.title = L("保存录制")
+        panel.prompt = L("保存")
+        panel.message = L("选择文件名、格式和保存位置")
         panel.canCreateDirectories = true
         panel.directoryURL = defaultDirectory
         panel.nameFieldStringValue = staged.url.lastPathComponent
@@ -139,7 +139,7 @@ final class SavePanelController {
         let asset = AVURLAsset(url: source)
         let type: AVFileType = destination.pathExtension.lowercased() == "mov" ? .mov : .mp4
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
-            completion(NSError(domain: "自由录屏", code: -1, userInfo: [NSLocalizedDescriptionKey: "无法创建导出任务"]))
+            completion(NSError(domain: "自由录屏", code: -1, userInfo: [NSLocalizedDescriptionKey: L("无法创建导出任务")]))
             return
         }
         session.outputURL = destination
@@ -150,7 +150,7 @@ final class SavePanelController {
                 if session.status == .completed {
                     completion(nil)
                 } else {
-                    completion(session.error ?? NSError(domain: "自由录屏", code: -2, userInfo: [NSLocalizedDescriptionKey: "导出失败"]))
+                    completion(session.error ?? NSError(domain: "自由录屏", code: -2, userInfo: [NSLocalizedDescriptionKey: L("导出失败")]))
                 }
             }
         }
@@ -170,9 +170,9 @@ final class SavePanelController {
 
     private func reportFailure(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "保存到所选位置失败"
-        alert.informativeText = "\(error.localizedDescription)\n\n录制文件仍保留在原来的位置。"
-        alert.addButton(withTitle: "好")
+        alert.messageText = L("保存到所选位置失败")
+        alert.informativeText = LF("%@\n\n录制文件仍保留在原来的位置。", error.localizedDescription)
+        alert.addButton(withTitle: L("好"))
         alert.runModal()
     }
 }

@@ -45,9 +45,9 @@ final class ControlBarController: NSObject {
         let symbol = on ? "video.fill" : "video.slash.fill"
         cameraButton?.image = NSImage(
             systemSymbolName: symbol,
-            accessibilityDescription: on ? "关闭摄像头画中画" : "开启摄像头画中画"
+            accessibilityDescription: on ? L("关闭摄像头画中画") : L("开启摄像头画中画")
         )
-        cameraButton?.toolTip = on ? "关闭摄像头画中画" : "开启摄像头画中画"
+        cameraButton?.toolTip = on ? L("关闭摄像头画中画") : L("开启摄像头画中画")
         // 关着的态压暗一档，扫一眼就知道小窗现在没进画面
         cameraButton?.contentTintColor = on ? .white : NSColor.white.withAlphaComponent(0.4)
     }
@@ -59,8 +59,8 @@ final class ControlBarController: NSObject {
     func setMicMuted(_ muted: Bool) {
         isMicMuted = muted
         let symbol = muted ? "mic.slash.fill" : "mic.fill"
-        micButton?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: muted ? "取消静音" : "静音麦克风")
-        micButton?.toolTip = muted ? "取消静音" : "静音麦克风"
+        micButton?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: muted ? L("取消静音") : L("静音麦克风"))
+        micButton?.toolTip = muted ? L("取消静音") : L("静音麦克风")
         micButton?.contentTintColor = muted ? .systemRed : .white
     }
 
@@ -78,8 +78,8 @@ final class ControlBarController: NSObject {
     func setPaused(_ paused: Bool) {
         isPaused = paused
         let symbol = paused ? "play.circle.fill" : "pause.circle.fill"
-        pauseButton?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: paused ? "继续录制" : "暂停录制")
-        pauseButton?.toolTip = paused ? "继续录制" : "暂停录制"
+        pauseButton?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: paused ? L("继续录制") : L("暂停录制"))
+        pauseButton?.toolTip = paused ? L("继续录制") : L("暂停录制")
         timeLabel?.textColor = paused ? .systemYellow : .white
         updateLabel()
     }
@@ -91,10 +91,10 @@ final class ControlBarController: NSObject {
         screenshotButton.isEnabled = false
         screenshotButton.image = NSImage(
             systemSymbolName: success ? "checkmark.circle.fill" : "xmark.circle.fill",
-            accessibilityDescription: success ? "截图已保存" : "截图失败"
+            accessibilityDescription: success ? L("截图已保存") : L("截图失败")
         )
         screenshotButton.contentTintColor = success ? .systemGreen : .systemRed
-        screenshotButton.toolTip = success ? "截图已保存" : "截图失败"
+        screenshotButton.toolTip = success ? L("截图已保存") : L("截图失败")
         let holdNanoseconds: UInt64 = success ? 600_000_000 : 1_200_000_000
         screenshotFeedbackTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: holdNanoseconds)
@@ -112,9 +112,9 @@ final class ControlBarController: NSObject {
     private func restoreScreenshotButton() {
         screenshotFeedbackTask = nil
         guard let screenshotButton else { return }
-        screenshotButton.image = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "截图")
+        screenshotButton.image = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: L("截图"))
         screenshotButton.contentTintColor = .white
-        screenshotButton.toolTip = "截图（保存到录制目录）"
+        screenshotButton.toolTip = L("截图（保存到录制目录）")
         screenshotButton.isEnabled = true
     }
 
@@ -136,65 +136,65 @@ final class ControlBarController: NSObject {
         container.addSubview(background)
 
         let pause = NSButton(
-            image: NSImage(systemSymbolName: "pause.circle.fill", accessibilityDescription: "暂停录制") ?? NSImage(),
+            image: NSImage(systemSymbolName: "pause.circle.fill", accessibilityDescription: L("暂停录制")) ?? NSImage(),
             target: self,
             action: #selector(pauseClicked)
         )
         pause.isBordered = false
         pause.contentTintColor = .white
-        pause.toolTip = "暂停录制"
+        pause.toolTip = L("暂停录制")
         pause.setFrameSize(NSSize(width: 26, height: 26))
         pauseButton = pause
 
         let label = NSTextField(labelWithString: "00:00")
         label.font = NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
         label.textColor = .white
-        label.toolTip = "录制时长"
+        label.toolTip = L("录制时长")
         timeLabel = label
 
         let screenshot = NSButton(
-            image: NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "截图") ?? NSImage(),
+            image: NSImage(systemSymbolName: "camera.fill", accessibilityDescription: L("截图")) ?? NSImage(),
             target: self,
             action: #selector(screenshotClicked)
         )
         screenshot.isBordered = false
         screenshot.contentTintColor = .white
-        screenshot.toolTip = "截图（保存到录制目录）"
+        screenshot.toolTip = L("截图（保存到录制目录）")
         screenshot.setFrameSize(NSSize(width: 24, height: 24))
         screenshotButton = screenshot
 
         let mic = NSButton(
-            image: NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "静音麦克风") ?? NSImage(),
+            image: NSImage(systemSymbolName: "mic.fill", accessibilityDescription: L("静音麦克风")) ?? NSImage(),
             target: self,
             action: #selector(micClicked)
         )
         mic.isBordered = false
         mic.contentTintColor = .white
-        mic.toolTip = "静音麦克风"
+        mic.toolTip = L("静音麦克风")
         mic.setFrameSize(NSSize(width: 24, height: 24))
         mic.isHidden = true
         micButton = mic
 
         let camera = NSButton(
-            image: NSImage(systemSymbolName: "video.slash.fill", accessibilityDescription: "开启摄像头画中画") ?? NSImage(),
+            image: NSImage(systemSymbolName: "video.slash.fill", accessibilityDescription: L("开启摄像头画中画")) ?? NSImage(),
             target: self,
             action: #selector(cameraClicked)
         )
         camera.isBordered = false
         camera.contentTintColor = NSColor.white.withAlphaComponent(0.4)
-        camera.toolTip = "开启摄像头画中画"
+        camera.toolTip = L("开启摄像头画中画")
         camera.setFrameSize(NSSize(width: 24, height: 24))
         cameraButton = camera
 
         // 右侧一个红色停止键，不再单独放取消键
-        let stop = NSButton(title: " 停止", target: self, action: #selector(stopClicked))
-        stop.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "停止并保存")
+        let stop = NSButton(title: L(" 停止"), target: self, action: #selector(stopClicked))
+        stop.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: L("停止并保存"))
         stop.imagePosition = .imageLeading
         stop.bezelStyle = .rounded
         stop.controlSize = .regular
         stop.font = .systemFont(ofSize: 13, weight: .semibold)
         stop.contentTintColor = .systemRed
-        stop.toolTip = "停止录制并保存"
+        stop.toolTip = L("停止录制并保存")
         stop.setFrameSize(NSSize(width: 74, height: 28))
         stop.keyEquivalent = "\r"
 

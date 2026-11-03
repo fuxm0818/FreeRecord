@@ -11,10 +11,10 @@ enum SystemAudioSupportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .blackHoleNotInstalled: return "没有检测到 BlackHole 虚拟声卡"
-        case .noOutputDevice: return "没有找到系统输出设备"
-        case .createFailed(let status): return "创建多输出设备失败（错误码 \(status)）"
-        case .switchOutputFailed: return "无法把系统输出切换到多输出设备"
+        case .blackHoleNotInstalled: return L("没有检测到 BlackHole 虚拟声卡")
+        case .noOutputDevice: return L("没有找到系统输出设备")
+        case .createFailed(let status): return LF("创建多输出设备失败（错误码 %d）", status)
+        case .switchOutputFailed: return L("无法把系统输出切换到多输出设备")
         }
     }
 }

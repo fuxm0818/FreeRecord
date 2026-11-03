@@ -10,9 +10,9 @@ enum RecordMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .fullScreen: return "全屏"
-        case .window: return "窗口…"
-        case .region: return "区域…"
+        case .fullScreen: return L("全屏")
+        case .window: return L("窗口…")
+        case .region: return L("区域…")
         }
     }
 }

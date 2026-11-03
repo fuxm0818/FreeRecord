@@ -39,6 +39,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create "$ARM_BIN" "$X86_BIN" -output "$APP/Contents/MacOS/$BIN_NAME"
 cp Resources/App-Info.plist "$APP/Contents/Info.plist"
+# App 名称/权限文案按系统语言取值：英文系统读 en.lproj，中文系统读 zh-Hans.lproj。
+# 少了这两个目录，Finder、Dock 和「系统设置 → 隐私与安全性」列表里会固定显示 App-Info.plist 里的中文值。
+cp -R Resources/en.lproj Resources/zh-Hans.lproj "$APP/Contents/Resources/"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # macOS 26 起系统不再给满幅图标加底板，运行时用它顶替 Dock 图标（见 AppMain）
 cp Resources/AppIconModern.icns "$APP/Contents/Resources/AppIconModern.icns"

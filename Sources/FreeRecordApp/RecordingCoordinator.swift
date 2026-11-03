@@ -109,7 +109,7 @@ final class RecordingCoordinator {
         let hasSystem = systemOn13 || blackHole != nil
 
         if source == nil, !hasMic, !hasSystem {
-            delegate?.recordingFailed(message: "录制音频至少要选择麦克风或系统声音。")
+            delegate?.recordingFailed(message: L("录制音频至少要选择麦克风或系统声音。"))
             return
         }
 
@@ -127,7 +127,7 @@ final class RecordingCoordinator {
         if hasMic {
             let micGranted = await AVCaptureDevice.requestAccess(for: .audio)
             guard micGranted else {
-                delegate?.recordingFailed(message: "没有麦克风权限。\n\n可以在 系统设置 → 隐私与安全性 → 麦克风 里授权，或改选其他声音来源。")
+                delegate?.recordingFailed(message: L("没有麦克风权限。\n\n可以在 系统设置 → 隐私与安全性 → 麦克风 里授权，或改选其他声音来源。"))
                 return
             }
         }
@@ -150,7 +150,7 @@ final class RecordingCoordinator {
             do {
                 audioRouting = try SystemAudioSupport.routeSystemAudio()
             } catch {
-                delegate?.recordingFailed(message: "系统声音没能接通：\(error.localizedDescription)。\n\n可以在「设置 → 系统声音」里重新创建多输出设备，或先只录麦克风。")
+                delegate?.recordingFailed(message: LF("系统声音没能接通：%@。\n\n可以在「设置 → 系统声音」里重新创建多输出设备，或先只录麦克风。", error.localizedDescription))
                 return
             }
         }
@@ -209,7 +209,7 @@ final class RecordingCoordinator {
                 } catch {
                     systemCapture.stop()
                     await teardownStartedSources(cancelWriter: writer)
-                    delegate?.recordingFailed(message: "虚拟声卡（\(blackHole.name)）启动失败：\(error.localizedDescription)")
+                    delegate?.recordingFailed(message: LF("虚拟声卡（%@）启动失败：%@", blackHole.name, error.localizedDescription))
                     return
                 }
             }
@@ -235,7 +235,7 @@ final class RecordingCoordinator {
                         self.systemAudioStream = stream
                     } catch {
                         await teardownStartedSources(cancelWriter: writer)
-                        delegate?.recordingFailed(message: "系统声音启动失败：\(error.localizedDescription)")
+                        delegate?.recordingFailed(message: LF("系统声音启动失败：%@", error.localizedDescription))
                         return
                     }
                 }
@@ -256,7 +256,7 @@ final class RecordingCoordinator {
                     // 此前已启动的系统声采集（黑声卡 / SCK 流）必须一并收掉，
                     // 否则它会在后台继续空转，占用音频硬件与 CPU
                     await teardownStartedSources(cancelWriter: writer)
-                    delegate?.recordingFailed(message: "麦克风启动失败：\(error.localizedDescription)")
+                    delegate?.recordingFailed(message: LF("麦克风启动失败：%@", error.localizedDescription))
                     return
                 }
             }
@@ -278,7 +278,7 @@ final class RecordingCoordinator {
             delegate?.recordingStateChanged()
         } catch {
             await teardownStartedSources(cancelWriter: createdWriter)
-            delegate?.recordingFailed(message: "启动录制失败：\(error.localizedDescription)")
+            delegate?.recordingFailed(message: LF("启动录制失败：%@", error.localizedDescription))
         }
     }
 
@@ -373,7 +373,7 @@ final class RecordingCoordinator {
                     continue
                 }
                 if let failure = self.writer?.failureDescription {
-                    self.captureInterrupted(message: "编码器报错：\(failure)")
+                    self.captureInterrupted(message: LF("编码器报错：%@", failure))
                     return
                 }
                 let now = counters.snapshot()
@@ -385,7 +385,7 @@ final class RecordingCoordinator {
                 last = now
                 if stalledTicks >= 3 {
                     let seconds = Int(self.elapsed.rounded())
-                    self.captureInterrupted(message: "第 \(seconds) 秒起编码器没有响应，已保存前 \(seconds) 秒。\n建议重启 App 后再录。")
+                    self.captureInterrupted(message: LF("第 %lld 秒起编码器没有响应，已保存前 %lld 秒。\n建议重启 App 后再录。", seconds, seconds))
                     return
                 }
             }
@@ -402,7 +402,7 @@ final class RecordingCoordinator {
         IOPMAssertionCreateWithName(
             kIOPMAssertionTypeNoDisplaySleep as CFString,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
-            "自由录屏正在录制" as CFString,
+            LF("%@ 正在录制", appDisplayName) as CFString,
             &sleepAssertionID
         )
     }
@@ -470,7 +470,7 @@ final class RecordingCoordinator {
             } else {
                 state = .idle
                 delegate?.recordingStateChanged()
-                delegate?.recordingFailed(message: "保存失败：\(error.localizedDescription)")
+                delegate?.recordingFailed(message: LF("保存失败：%@", error.localizedDescription))
             }
         }
     }
@@ -480,7 +480,7 @@ final class RecordingCoordinator {
     /// 转码这一步失败而丢掉。
     private func mp3Product(from intermediate: URL) async -> URL {
         guard Mp3Exporter.isAvailable else {
-            delegate?.recordingFailed(message: "没有可用的 MP3 编码器，本次成品保存为 .m4a")
+            delegate?.recordingFailed(message: L("没有可用的 MP3 编码器，本次成品保存为 .m4a"))
             return intermediate
         }
         let target = intermediate.deletingPathExtension().appendingPathExtension("mp3")
@@ -489,7 +489,7 @@ final class RecordingCoordinator {
             try? FileManager.default.removeItem(at: intermediate)
             return target
         } catch {
-            delegate?.recordingFailed(message: "转 MP3 失败：\(error.localizedDescription)，本次成品保存为 .m4a")
+            delegate?.recordingFailed(message: LF("转 MP3 失败：%@，本次成品保存为 .m4a", error.localizedDescription))
             return intermediate
         }
     }
@@ -567,15 +567,15 @@ final class RecordingCoordinator {
         let logPath = Self.appendDiagnostics(writer: writer, message: message)
         let elapsedSeconds = Int(elapsed.rounded())
         var shown = message
-        if let logPath { shown += "\n诊断已写入：\(logPath)" }
+        if let logPath { shown += "\n" + LF("诊断已写入：%@", logPath) }
         if elapsedSeconds <= 3 {
-            shown += "\n\n开录几秒就失败通常是编码器扛不住当前分辨率/帧率，建议降到 1080p 或 30fps 再试。"
+            shown += "\n\n" + L("开录几秒就失败通常是编码器扛不住当前分辨率/帧率，建议降到 1080p 或 30fps 再试。")
         }
         state = .finishing
         delegate?.recordingStateChanged()
         Task { [weak self] in
             await self?.complete(save: true, askToSave: false)
-            self?.delegate?.recordingFailed(message: "采集中断，已保存已录部分。\n\(shown)")
+            self?.delegate?.recordingFailed(message: LF("采集中断，已保存已录部分。\n%@", shown))
         }
     }
 

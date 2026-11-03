@@ -433,7 +433,7 @@ final class CameraPiPController: NSObject, NSWindowDelegate {
         container.layer?.borderWidth = 2
         container.layer?.masksToBounds = true
         container.autoresizingMask = [.width, .height]
-        container.toolTip = "拖动移动 · 拖四边四角或滚轮调整大小"
+        container.toolTip = L("拖动移动 · 拖四边四角或滚轮调整大小")
         container.captureWidthProvider = { [weak self] in self?.captureRect.width ?? 0 }
         container.onResizeWidth = { [weak self] width, zone in self?.resizeToWidth(width, zone: zone) }
         container.onResizeEnded = { [weak self] in self?.commitDraggedPlacement() }

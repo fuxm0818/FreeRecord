@@ -41,7 +41,7 @@ final class PreRecordBarController: NSObject {
         self.pixelScale = max(pixelScale, 1)
         self.settingsRef = settings
 
-        let size = Self.panelSize
+        var size = Self.panelSize
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -58,9 +58,9 @@ final class PreRecordBarController: NSObject {
         container.addSubview(background)
 
         let widthField = makeSizeField("\(Int(pixelSize.width))")
-        widthField.toolTip = "宽度（像素）"
+        widthField.toolTip = L("宽度（像素）")
         let heightField = makeSizeField("\(Int(pixelSize.height))")
-        heightField.toolTip = "高度（像素）"
+        heightField.toolTip = L("高度（像素）")
         self.widthField = widthField
         self.heightField = heightField
 
@@ -69,15 +69,15 @@ final class PreRecordBarController: NSObject {
         timesLabel.textColor = NSColor.white.withAlphaComponent(0.5)
 
         let resolutionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        resolutionPopup.addItems(withTitles: ["原始分辨率", "1080P", "720P"])
-        resolutionPopup.toolTip = "录制分辨率"
+        resolutionPopup.addItems(withTitles: [L("原始分辨率"), "1080P", "720P"])
+        resolutionPopup.toolTip = L("录制分辨率")
         resolutionPopup.selectItem(at: settings.targetHeight == 0 ? 0 : (settings.targetHeight == 1080 ? 1 : 2))
         stylePopup(resolutionPopup)
         self.resolutionPopup = resolutionPopup
 
         let fpsPopup = NSPopUpButton(frame: .zero, pullsDown: false)
         fpsPopup.addItems(withTitles: ["15FPS", "30FPS", "60FPS"])
-        fpsPopup.toolTip = "帧率"
+        fpsPopup.toolTip = L("帧率")
         fpsPopup.selectItem(at: settings.fps == 15 ? 0 : (settings.fps == 30 ? 1 : 2))
         stylePopup(fpsPopup)
         self.fpsPopup = fpsPopup
@@ -90,7 +90,7 @@ final class PreRecordBarController: NSObject {
         )
         let systemButton = makeToggle(
             symbol: "speaker.wave.2.fill",
-            tip: systemAvailable ? "系统声音" : "系统声音需 macOS 13 或 BlackHole",
+            tip: systemAvailable ? L("系统声音") : L("系统声音需 macOS 13 或 BlackHole"),
             isOn: settings.audio(for: .screen).wantsSystemAudio && systemAvailable
         )
         systemButton.isEnabled = systemAvailable
@@ -111,22 +111,22 @@ final class PreRecordBarController: NSObject {
         self.mouseButton = mouseButton
         self.cameraButton = cameraButton
 
-        let startButton = NSButton(title: "开始录制", target: self, action: #selector(startClicked))
+        let startButton = NSButton(title: L("开始录制"), target: self, action: #selector(startClicked))
         startButton.bezelStyle = .rounded
         startButton.controlSize = .regular
         startButton.font = .systemFont(ofSize: 13, weight: .semibold)
         startButton.contentTintColor = .systemRed
-        startButton.toolTip = "开始录制"
+        startButton.toolTip = L("开始录制")
         startButton.keyEquivalent = "\r"
 
         let closeButton = NSButton(
-            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "取消") ?? NSImage(),
+            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L("取消")) ?? NSImage(),
             target: self,
             action: #selector(closeClicked)
         )
         closeButton.isBordered = false
         closeButton.contentTintColor = NSColor.white.withAlphaComponent(0.45)
-        closeButton.toolTip = "取消"
+        closeButton.toolTip = L("取消")
         closeButton.setFrameSize(NSSize(width: 20, height: 20))
 
         // 弹性占位：单独持有再设低抱合力。
@@ -156,6 +156,11 @@ final class PreRecordBarController: NSObject {
         ])
 
         panel.contentView = container
+        container.layoutSubtreeIfNeeded()
+        // 宽度按本地化后的控件实测：英文「Native resolution」「Start Recording」各比中文宽几十点，
+        // 沿用写死的 640 会让整行被无边框面板裁掉
+        size.width = max(size.width, ceil(stack.fittingSize.width) + 32)
+        panel.setContentSize(size)
         panel.setFrameOrigin(Self.barOrigin(for: target, panelSize: size))
         panel.orderFrontRegardless()
         self.panel = panel
@@ -247,6 +252,7 @@ final class PreRecordBarController: NSObject {
     }
 
     private func makeToggle(symbol: String, tip: String, isOn: Bool) -> NSButton {
+        let tip = L(tip)
         let button = NSButton(
             image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip) ?? NSImage(),
             target: self,
