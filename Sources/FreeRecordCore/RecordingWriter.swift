@@ -144,11 +144,12 @@ public final class RecordingWriter {
             fps: fps,
             hasMicTrack: hasMicTrack,
             hasSystemTrack: hasSystemTrack,
-            bitrate: bitrate
+            bitrate: bitrate,
+            audioBitRate: 160_000
         )
     }
 
-    /// 纯音频录制（录制音频模式），输出 .m4a
+    /// 纯音频录制（录制音频模式）的中间档，输出 .m4a；成品由 Mp3Exporter 转成 .mp3
     public convenience init(audioOnlyURL url: URL, hasMicTrack: Bool, hasSystemTrack: Bool) throws {
         guard hasMicTrack || hasSystemTrack else {
             throw WriterError.setupFailed("没有选择声音来源")
@@ -161,11 +162,13 @@ public final class RecordingWriter {
             fps: 0,
             hasMicTrack: hasMicTrack,
             hasSystemTrack: hasSystemTrack,
-            bitrate: 0
+            bitrate: 0,
+            // 这一档后面还要二次编码成 MP3，码率给高些，损失集中在 MP3 那一级
+            audioBitRate: 256_000
         )
     }
 
-    private init(url: URL, fileType: AVFileType, width: Int, height: Int, fps: Int, hasMicTrack: Bool, hasSystemTrack: Bool, bitrate: Int) throws {
+    private init(url: URL, fileType: AVFileType, width: Int, height: Int, fps: Int, hasMicTrack: Bool, hasSystemTrack: Bool, bitrate: Int, audioBitRate: Int) throws {
         self.url = url
         self.audioTrackCount = (hasMicTrack ? 1 : 0) + (hasSystemTrack ? 1 : 0)
         self.width = width
@@ -223,7 +226,7 @@ public final class RecordingWriter {
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48_000,
                 AVNumberOfChannelsKey: 2,
-                AVEncoderBitRateKey: 160_000,
+                AVEncoderBitRateKey: audioBitRate,
             ])
             input.expectsMediaDataInRealTime = true
             if assetWriter.canAdd(input) {

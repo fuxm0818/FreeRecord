@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import FreeRecordCore
 import UniformTypeIdentifiers
 
 /// 停止录制后的保存弹窗：文件名 / 格式 / 目录。
@@ -24,7 +25,8 @@ final class SavePanelController {
         panel.directoryURL = defaultDirectory
         panel.nameFieldStringValue = staged.url.lastPathComponent
         if staged.width == 0 {
-            panel.allowedContentTypes = [.mpeg4Audio]
+            // 纯音频只认 MP3；包里没带编码器时才能退到 .m4a
+            panel.allowedContentTypes = Mp3Exporter.isAvailable ? [.mp3] : [.mpeg4Audio]
         } else {
             panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie]
         }
@@ -98,6 +100,25 @@ final class SavePanelController {
             } catch {
                 reportFailure(error)
                 completion(recording)
+            }
+            return
+        }
+
+        if targetExt == "mp3" {
+            // m4a → mp3 是重编码，不是转封装：AVAssetExportSession 没有 MP3 能力，走 LAME
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    completion(recording)
+                    return
+                }
+                do {
+                    try await Mp3Exporter().export(from: source, to: destination)
+                    try? FileManager.default.removeItem(at: source)
+                    completion(rebuild(recording, url: destination))
+                } catch {
+                    reportFailure(error)
+                    completion(recording)
+                }
             }
             return
         }

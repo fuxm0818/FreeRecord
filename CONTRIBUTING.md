@@ -1,6 +1,8 @@
 # 贡献指南
 
-先说结论：**这个项目没有第三方依赖，不需要 Xcode 工程文件，`swift build` 就能跑起来。** 需要 Swift 5.7+（Xcode 14+ 或单独安装的 Command Line Tools 均可，macOS 12.3+）。
+先说结论：**这个项目不链接任何第三方库，不需要 Xcode 工程文件，`swift build` 就能跑起来。** 需要 Swift 5.7+（Xcode 14+ 或单独安装的 Command Line Tools 均可，macOS 12.3+）。
+
+唯一的例外是纯录音的 MP3 编码：macOS 自带框架只有 MP3 解码、没有编码能力，所以构建时会把 LAME 单独编译成一个 helper 进程放进包里（不链接、不改 License），首次 `bash scripts/build.sh` 会多花约 1 分钟，产物缓存在 `Vendor/`（已 gitignore）。详见下文「MP3 编码器」。
 
 ## 环境
 
@@ -14,10 +16,19 @@ swift --version                  # 需要 Swift 5.7+（Xcode 16 / Swift 6 也可
 ## 本地开发循环
 
 ```bash
-swift build                        # 最快的编译/类型检查（只编当前架构）
-bash scripts/build.sh              # 完整通用二进制 → dist/FreeRecord.app
+swift build                        # 最快的编译/类型检查（只编当前架构，不含 MP3 编码器）
+bash scripts/build.sh              # 完整通用二进制 → dist/FreeRecord.app（首次会先编 LAME）
 open dist/FreeRecord.app           # 运行（推荐：LSUIElement 菜单栏 App 必须以 .app 形式运行才规范）
 ```
+
+### MP3 编码器
+
+`scripts/build.sh` 第一步会调 `scripts/build-mp3-encoder.sh`，把 LAME 交叉编译成 arm64 + x86_64 通用二进制，放到 `Vendor/bin/lame`，再由 `build.sh` 拷进 `dist/FreeRecord.app/Contents/Helpers/lame` 并签名。
+
+- 缓存：源码 tarball 存在 `~/.cache/freerec`，`Vendor/` 已被 gitignore，不会进仓库。
+- 首次约 1 分钟，之后命中缓存很快；改了编译参数想重来用 `FORCE=1 bash scripts/build-mp3-encoder.sh`。
+- 内网/离线编不了：`ALLOW_MISSING_MP3_ENCODER=1 bash scripts/build.sh` 照样能出包，纯录音会退回 `.m4a`（视频录制不受影响）。
+- 脚本末尾有一条 `otool -L` 检查，一旦 LAME 链上了 Homebrew 的 dylib 就直接失败——那种包在别人机器上跑不起来。
 
 几个会反复用到的点：
 
@@ -31,7 +42,7 @@ open dist/FreeRecord.app           # 运行（推荐：LSUIElement 菜单栏 App
 - Swift 5 语言模式（`swift-tools-version: 5.7` 在 Swift 6 下同样默认 Swift 5 模式），别在 PR 里顺手升到 Swift 6 严格并发。
 - UI 相关类型标 `@MainActor`；内核里的共享状态用 `NSLock` 保护，不要在锁里调用 async 上下文（编译器会警告，警告要清零）。
 - 界面文案、错误提示、代码注释统一中文；标识符、日志 tag 用英文。
-- 不引入第三方库。这个项目的卖点之一就是"零依赖、单包 6900 行能读懂"。
+- 不引入第三方**库**。这个项目的卖点之一是"不链接任何第三方库、单包能读懂"。唯一的例外是 LAME：它以独立子进程的形式打在 `Contents/Helpers/lame` 里，构建时现场编译，不参与链接，也不改变本项目的 MIT 许可。
 - 格式化没有强制工具，跟随所在文件的既有风格；不要提交与功能无关的全文件格式化。
 
 ## 动手前必读的两个坑
@@ -57,6 +68,7 @@ PR 检查清单：
 
 - [ ] `swift build` 无错误、无警告
 - [ ] `bash scripts/build.sh` 能通过，`lipo -info` 显示 `x86_64 arm64`
+- [ ] 包里带编码器：`ls dist/FreeRecord.app/Contents/Helpers/lame` 存在，且 `otool -L` 只有系统 dylib；录一段音的成品是 `.mp3`
 - [ ] 手动跑过受影响的功能（见下面的回归清单）
 - [ ] 用户可见的变化同步更新了 README / CHANGELOG
 - [ ] 没有把 `dist/`、`.build*`、本地私有文件提交进来（`git status --ignored` 检查）
@@ -69,6 +81,7 @@ PR 检查清单：
 |---|---|
 | 整屏 / 窗口 / 区域录制 | 各录 10 秒，检查画面范围与清晰度 |
 | 四种音频 | 录一段有系统声音 + 说话的内容，用播放器确认两条音轨 |
+| 纯录音出 MP3 | 录 10 秒，成品是 `.mp3`（48kHz / 192kbps）、中间产物 `.m4a` 已被删除、历史列表与预览正常 |
 | 暂停 / 继续 | 暂停 30 秒后继续，成片时长不应包含暂停时间 |
 | 停止保存 | 停止后确认文件可播放；异常中断也应保留可播放片段 |
 | 多显示器 | 主屏与副屏各选一次区域，检查坐标是否跑偏 |

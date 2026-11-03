@@ -84,7 +84,7 @@ final class RecordingCoordinator {
         await startSession(source: source, settings: settings, cameraOverlay: cameraOverlay)
     }
 
-    /// 录制音频（无画面），输出 .m4a
+    /// 录制音频（无画面），成品输出 .mp3
     func startAudioOnly(settings: CaptureSettings, onLevel: ((Float) -> Void)?) async {
         await startSession(source: nil, settings: settings, levelHandler: onLevel)
     }
@@ -459,8 +459,9 @@ final class RecordingCoordinator {
         do {
             let url = try await writer.finish()
             Self.appendAlignmentLog(writer: writer)
-            let real = await Self.movieDuration(url)
-            reportSaved(url: url, writer: writer, size: size, duration: real ?? duration, askToSave: askToSave)
+            let product = size.width == 0 ? await mp3Product(from: url) : url
+            let real = await Self.movieDuration(product)
+            reportSaved(url: product, writer: writer, size: size, duration: real ?? duration, askToSave: askToSave)
         } catch {
             // 分片 MP4 的 moov 在文件头，收尾失败时已录内容大概率仍可播放，别让用户白录
             if Self.isPlayableMovie(writer.url) {
@@ -471,6 +472,25 @@ final class RecordingCoordinator {
                 delegate?.recordingStateChanged()
                 delegate?.recordingFailed(message: "保存失败：\(error.localizedDescription)")
             }
+        }
+    }
+
+    /// 纯音频录制交付 .mp3：系统框架没有 MP3 编码器，编码交给打包进来的 LAME 子进程。
+    /// 编码器不在（开发构建）或转码失败时退回中间档 .m4a——已录的音不能因为
+    /// 转码这一步失败而丢掉。
+    private func mp3Product(from intermediate: URL) async -> URL {
+        guard Mp3Exporter.isAvailable else {
+            delegate?.recordingFailed(message: "没有可用的 MP3 编码器，本次成品保存为 .m4a")
+            return intermediate
+        }
+        let target = intermediate.deletingPathExtension().appendingPathExtension("mp3")
+        do {
+            try await Mp3Exporter().export(from: intermediate, to: target)
+            try? FileManager.default.removeItem(at: intermediate)
+            return target
+        } catch {
+            delegate?.recordingFailed(message: "转 MP3 失败：\(error.localizedDescription)，本次成品保存为 .m4a")
+            return intermediate
         }
     }
 

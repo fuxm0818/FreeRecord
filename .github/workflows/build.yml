@@ -56,6 +56,13 @@ jobs:
           rm -f "$RUNNER_TEMP/devID.p12"
           echo "CODESIGN_IDENTITY=$DEVELOPER_ID_NAME" >> "$GITHUB_ENV"
 
+      - name: 缓存 LAME 源码包
+        # 版本号要和 scripts/build-mp3-encoder.sh 里的 LAME_VERSION 一致
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/freerec
+          key: lame-3.100-${{ runner.arch }}
+
       - name: 构建通用二进制
         run: bash scripts/build.sh
 

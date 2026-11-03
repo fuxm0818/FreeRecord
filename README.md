@@ -23,7 +23,8 @@ macOS 上顺手录一段屏，常常卡在三件事：商业软件带水印或�
 - **常驻菜单栏** + 悬浮控制条：录制计时、暂停 / 继续、截屏、停止并保存
 - **倒计时**（3-2-1，可关）、**鼠标点击高亮**（可开，不需要「辅助功能」权限）
 - **快捷键**：<kbd>⌥⌘R</kbd> 开始 / 停止录制，<kbd>⌥⌘P</kbd> 暂停 / 继续
-- **输出**：H.264 MP4（分片写入，中途异常也不丢已录内容），可无损转封装为 MOV
+- **视频输出**：H.264 MP4（分片写入，中途异常也不丢已录内容），可无损转封装为 MOV
+- **音频输出**：纯录音模式直接出 **MP3**（192 kbps CBR / 48 kHz 立体声，麦克风与系统声音自动混成一条）。macOS 只提供 MP3 解码、没有 MP3 编码器，所以这一步由随包内嵌的 LAME 完成
 - **分辨率与帧率**：原始 / 1080P / 720P，15 / 30 / 60 fps
 - 摄像头录制、纯录音模式、录制完成预览、开机自启
 - **零遥测**：不联网、不上传，文件只落在你选的目录（默认 `~/Movies/自由录屏`）
@@ -51,7 +52,7 @@ macOS 上顺手录一段屏，常常卡在三件事：商业软件带水印或�
 
 ## 从源码构建
 
-前置：Xcode 16（Swift 6）或任意 Swift 5.7+ 工具链均可，仅安装 Command Line Tools 也能构建（macOS 12.3+）。无第三方依赖，无需 `pod`/`npm install`。
+前置：Xcode 16（Swift 6）或任意 Swift 5.7+ 工具链均可，仅安装 Command Line Tools 也能构建（macOS 12.3+）。不需要 `pod`/`npm install`，主程序也不链接任何第三方库；唯一的原生第三方组件是 MP3 编码器 LAME，由 `scripts/build.sh` 调 `scripts/build-mp3-encoder.sh` 从官方源码现场编译成独立可执行文件内嵌进 App（要联网，离线时用 `ALLOW_MISSING_MP3_ENCODER=1` 跳过，代价是这次构建的包只能出 .m4a）。
 
 ```bash
 git clone https://github.com/fuxm0818/FreeRecord.git
@@ -79,12 +80,13 @@ bash scripts/build-poc.sh      # 产物：dist/FreeRecordPOC.app
 ## 目录结构
 
 ```
-Package.swift                 SwiftPM 清单，三个 target，无第三方依赖
-Sources/FreeRecordCore/       录制内核：ScreenCaptureKit 采集、AVAssetWriter 写入、音频设备
+Package.swift                 SwiftPM 清单，三个 target，不链接第三方库
+Sources/FreeRecordCore/       录制内核：ScreenCaptureKit 采集、AVAssetWriter 写入、音频设备、MP3 导出
 Sources/FreeRecordApp/        正式 App：菜单栏、选区层、悬浮条、设置、保存与预览
 Sources/FreeRecordPOC/        性能压测与内核验证工具（保留用于 Intel 机型实测）
 Resources/                    Info.plist、entitlements
-scripts/                      build.sh / make-dmg.sh / create-signing-cert.sh / build-poc.sh
+scripts/                      build.sh / build-mp3-encoder.sh / make-dmg.sh / create-signing-cert.sh / build-poc.sh
+Vendor/                       构建时产出的内嵌编码器（已 gitignore，不要手工编辑）
 docs/                         权限说明、架构说明
 .github/workflows/            自动打包与发布
 ```
@@ -103,6 +105,9 @@ macOS 的录屏授权按**代码签名身份**记录。ad-hoc 签名每次重新
 macOS 12 需要安装 BlackHole；装完在「声音设置」里确认可见，再重启 App。macOS 13+ 无需任何额外安装。
 想在录音时同时听到声音，装好 BlackHole 后在设置页点「创建多输出设备（边录边听）…」，App 会创建包含扬声器和 BlackHole 的多输出设备（扬声器作时钟源，BlackHole 开启漂移补偿跟随），按提示把系统输出切过去即可。
 
+**纯录音为什么出 MP3，还能出别的吗？**
+默认成品就是 MP3。macOS 的系统框架只能解码 MP3、不能编码，所以编码这一步交给随包内嵌的 LAME（`Contents/Helpers/lame`，独立子进程）。录制过程中间档是 256 kbps 的 AAC/.m4a，转码成功后删除；只有包里没带编码器时（离线自建用 `ALLOW_MISSING_MP3_ENCODER=1`）才退回 .m4a。录屏的音轨仍在 MP4 容器里，不受这一步影响。
+
 **录制的画面是全黑的？**
 DRM 保护内容（部分播放器、私密窗口）会返回黑屏；另一种可能是刚重新构建导致授权失效。
 
@@ -116,7 +121,7 @@ DRM 保护内容（部分播放器、私密窗口）会返回黑屏；另一种�
 
 - 日常开发在 `develop` 分支，验证通过后合并 `main`；`main` 上打 `v*` tag 会由 CI 自动发布 Release。
 - Bug 与功能请求欢迎开 Issue，改动请提 PR，先读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 新手友好标签：内核和 UI 的边界很清楚，`docs/ARCHITECTURE.md` 里列了 7 个最容易踩的实现坑。
+- 新手友好标签：内核和 UI 的边界很清楚，`docs/ARCHITECTURE.md` 里列了 8 个最容易踩的实现坑。
 
 ## 许可与声明
 
@@ -124,6 +129,7 @@ DRM 保护内容（部分播放器、私密窗口）会返回黑屏；另一种�
 - 本项目不收集任何数据，不联网上传任何内容。
 - 使用本工具录制他人屏幕、会议或受版权保护的内容前，请自行确认已获得授权并符合当地法律。
 - BlackHole 是 [Existential Audio](https://existential.audio/blackhole/) 的第三方开源软件，本项目仅调用它，不随包分发。
+- LAME 是 LGPL-2.0-or-later 的第三方 MP3 编码器。App 本体不链接它——构建脚本从[官方源码](https://sourceforge.net/projects/lame/)编译出独立可执行文件，放在 `FreeRecord.app/Contents/Helpers/lame` 由 App 以子进程调用，许可证文本随包附在 `Contents/Resources/LICENSE.lame`。
 
 ---
 
@@ -131,6 +137,6 @@ DRM 保护内容（部分播放器、私密窗口）会返回黑屏；另一种�
 
 ## English
 
-FreeRecord is a free, open-source, watermark-free screen recorder for macOS 12.3+ (universal binary: Apple Silicon + Intel). It captures the full screen, a single window, or a draggable region, with four audio choices — none, microphone, system audio, or both on separate tracks. It lives in the menu bar with a floating control bar, offers a countdown, click highlight, hotkeys (<kbd>⌥⌘R</kbd> / <kbd>⌥⌘P</kbd>), and writes fragmented H.264 MP4 so a crash never loses recorded content.
+FreeRecord is a free, open-source, watermark-free screen recorder for macOS 12.3+ (universal binary: Apple Silicon + Intel). It captures the full screen, a single window, or a draggable region, with four audio choices — none, microphone, system audio, or both on separate tracks. It lives in the menu bar with a floating control bar, offers a countdown, click highlight, hotkeys (<kbd>⌥⌘R</kbd> / <kbd>⌥⌘P</kbd>), and writes fragmented H.264 MP4 so a crash never loses recorded content. Audio-only mode exports **MP3** (192 kbps CBR, 48 kHz).
 
-No third-party dependencies: Swift + ScreenCaptureKit + AVFoundation only. Build with `bash scripts/build.sh`, package with `bash scripts/make-dmg.sh`. Current releases are ad-hoc/self-signed, so first launch needs right-click → Open; system audio on macOS 12 requires the free BlackHole virtual sound card. Zero telemetry. MIT licensed.
+No third-party libraries are linked in: Swift + ScreenCaptureKit + AVFoundation only. Since macOS ships an MP3 decoder but no encoder, MP3 output runs LAME — compiled from official source by the build script and shipped as a separate helper binary (LGPL). Build with `bash scripts/build.sh`, package with `bash scripts/make-dmg.sh`. Current releases are ad-hoc/self-signed, so first launch needs right-click → Open; system audio on macOS 12 requires the free BlackHole virtual sound card. Zero telemetry. MIT licensed.

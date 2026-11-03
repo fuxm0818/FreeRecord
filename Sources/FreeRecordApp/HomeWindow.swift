@@ -23,8 +23,10 @@ struct HistoryItem: Identifiable {
     }
 
     var isAudio: Bool {
-        url.pathExtension.lowercased() == "m4a"
+        Self.audioExtensions.contains(url.pathExtension.lowercased())
     }
+
+    static let audioExtensions: Set<String> = ["m4a", "mp3"]
 
     var dimensionsText: String {
         width > 0 ? "\(width) × \(height)" : "—"
@@ -46,6 +48,8 @@ struct HistoryItem: Identifiable {
 final class RecordingHistory: ObservableObject {
     @Published var items: [HistoryItem] = []
     @Published var isLoading = false
+    /// 历史列表认识的成品后缀
+    private static let visibleExtensions: Set<String> = ["mp4", "mov", "png", "m4a", "mp3"]
     private var directory: URL
 
     init(directory: URL) {
@@ -72,7 +76,7 @@ final class RecordingHistory: ObservableObject {
             return []
         }
         let files = urls
-            .filter { ["mp4", "mov", "m4a", "png"].contains($0.pathExtension.lowercased()) }
+            .filter { visibleExtensions.contains($0.pathExtension.lowercased()) }
             .sorted { a, b in
                 let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
@@ -107,7 +111,7 @@ final class RecordingHistory: ObservableObject {
            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
             width = props[kCGImagePropertyPixelWidth] as? Int ?? 0
             height = props[kCGImagePropertyPixelHeight] as? Int ?? 0
-        } else if url.pathExtension.lowercased() == "m4a" {
+        } else if HistoryItem.audioExtensions.contains(url.pathExtension.lowercased()) {
             let asset = AVURLAsset(url: url)
             if let loaded = try? await asset.load(.duration) {
                 duration = loaded.seconds
@@ -148,7 +152,7 @@ final class RecordingHistory: ObservableObject {
         if url.pathExtension.lowercased() == "png" {
             return NSImage(contentsOf: url)
         }
-        if url.pathExtension.lowercased() == "m4a" {
+        if HistoryItem.audioExtensions.contains(url.pathExtension.lowercased()) {
             return nil
         }
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))

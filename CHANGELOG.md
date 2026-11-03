@@ -2,6 +2,16 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [1.1.0] - 2026-11-03
+
+### 新增
+
+- **纯录音的成品现在是 MP3**：之前「录制音频」出的是 `.m4a`（AAC）；MP3 在设备、播放器和剪辑工具链上的兼容性更宽，所以成品改成 MP3。macOS 自带框架只有 MP3 解码、没有编码能力（`AVAssetWriter` / `AVAssetExportSession` / `afconvert` 都做不到），因此构建时把 [LAME](https://lame.sourceforge.io/) 单独编译成通用二进制的 helper 放进包内（`Contents/Helpers/lame`，不链接第三方库，LGPL 许可与声明随包附在 `Contents/Resources/LICENSE.lame`）。
+  - 停止录制后把中间产物 `.m4a`（256kbps）解码为 PCM 流式交给 LAME，成品 48kHz / 192kbps CBR 的 `.mp3`，成功后删除中间文件；历史列表、预览面板、保存面板同步支持 MP3
+  - 麦克风 + 系统声音两条独立音轨由系统混音输出相加为一条，不用自己按样本对齐
+  - 包内没有编码器（离线构建）或转码失败时，成品退回 `.m4a` 并提示，不会丢掉这次录音；`ALLOW_MISSING_MP3_ENCODER=1 bash scripts/build.sh` 可跳过 LAME 编译
+  - 视频录制的封装与音轨不受影响，仍是 MP4 + 两条 AAC
+
 ## [1.0.8] - 2026-11-01
 
 ### 修复

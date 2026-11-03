@@ -37,7 +37,7 @@ body:
     attributes:
       label: 约束确认
       options:
-        - label: 该功能可以保持"零第三方依赖"（只用系统框架）
+        - label: 该功能可以只用系统框架实现（不链接第三方库；必要时允许像 LAME 那样内嵌独立可执行文件）
           required: false
         - label: 该功能在 macOS 12.3 上可用，或可为不同系统版本分支
           required: false

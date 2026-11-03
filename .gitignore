@@ -3,6 +3,7 @@
 .build-x86/
 dist/
 dist-local/
+Vendor/
 *.dmg
 *.zip
 
